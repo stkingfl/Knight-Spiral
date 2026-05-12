@@ -8,11 +8,12 @@ unoccupied cell that is not attacked by an opposing knight.
 
 ## Browser Visualization
 
-Open `index.html` in a browser to change the number of placements and inspect
-the board. The canvas supports drag-to-pan, wheel/trackpad zoom, double-click
-zoom, and touch pinch zoom. Type any nonnegative placement count into the
-number field; the slider expands when you go past its current range, so large
-runs such as 2,000,000 placements are entered directly.
+Open `index.html` in a browser to inspect the default 1,000,000-placement
+two-knight board, then change the number of placements as needed. The canvas
+supports drag-to-pan, wheel/trackpad zoom, double-click zoom, and touch pinch
+zoom. Type any nonnegative placement count into the number field; the slider
+expands when you go past its current range, so large runs such as 2,000,000
+placements are entered directly.
 
 The browser app has a fairy-piece palette using supported leapers and riders
 from Wikipedia's list at `https://en.wikipedia.org/wiki/List_of_fairy_chess_pieces`.
@@ -22,10 +23,15 @@ duplicates are allowed, and order matters. The default queue is `Knight,
 Knight`, matching the OEIS two-player reference game.
 
 Long simulations run in `simulation-worker.js` when available, with a chunked
-main-thread fallback. The renderer indexes occupied tiles and draws only the
-visible part of the board while panning and zooming. Rider-piece queues are
-capped at 25,000 placements so expensive experiments cannot lock up a visitor's
-browser tab.
+main-thread fallback. On `file://`, the browser app uses an inline Blob worker
+so the default one-million-placement view can still load locally. The renderer
+indexes occupied tiles and draws only the visible part of the board while
+panning and zooming. Rider-piece queues are capped at 25,000 placements so
+expensive experiments cannot lock up a visitor's browser tab.
+
+The support button at the bottom of `index.html` currently points to the Buy Me
+a Coffee homepage. Replace that `href` with your actual creator or donation
+URL before publishing.
 
 ## Static Deployment
 

@@ -3,14 +3,20 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Knight Spiral</title>
+    <meta name="description" content="Interactive knight spiral simulation inspired by OEIS A392177.">
+    <title>Knight Spiral Lab</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <header class="topbar">
-      <div>
-        <h1>Knight Spiral</h1>
-        <a href="https://oeis.org/A392177" target="_blank" rel="noreferrer">OEIS A392177</a>
+      <div class="brand-block">
+        <p class="eyebrow">OEIS A392177 webtoy</p>
+        <h1>Knight Spiral Lab</h1>
+        <p class="tagline">Two knights take turns claiming the earliest safe square on a growing spiral.</p>
+        <div class="top-links">
+          <a href="https://oeis.org/A392177" target="_blank" rel="noreferrer">OEIS entry</a>
+          <a href="#rules">Rules</a>
+        </div>
       </div>
       <div class="summary" id="summaryStats" aria-live="polite">
         <span><strong id="placementCount">0</strong> placements</span>
@@ -22,18 +28,34 @@
         <canvas id="board" aria-label="Knight spiral visualization"></canvas>
         <div class="canvas-tools">
           <button id="zoomOut" type="button" title="Zoom out" aria-label="Zoom out">-</button>
-          <button id="fitBoard" type="button" title="Fit board" aria-label="Fit board">[]</button>
+          <button id="fitBoard" type="button" title="Fit board" aria-label="Fit board">Fit</button>
           <button id="zoomIn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+        </div>
+        <div id="boardStatus" class="board-status" aria-live="polite">
+          <div>
+            <strong id="boardStatusTitle">Building spiral</strong>
+            <span id="boardStatusDetail">0 / 1,000,000 placements</span>
+          </div>
+          <div class="status-meter" aria-hidden="true">
+            <span id="boardStatusFill"></span>
+          </div>
         </div>
       </section>
 
-      <aside class="side-panel" aria-label="Simulation controls">
-        <section class="control-group">
+      <aside class="side-panel control-dock" aria-label="Simulation controls">
+        <section class="control-group main-controls">
           <div class="field-row">
             <label for="stepsRange">Placements</label>
-            <input id="stepsNumber" type="number" min="0" step="1" value="160" aria-label="Placement count">
+            <input id="stepsNumber" type="number" min="0" step="1" value="1000000" aria-label="Placement count">
           </div>
-          <input id="stepsRange" type="range" min="0" max="2500" step="1" value="160">
+          <input id="stepsRange" type="range" min="0" max="2000000" step="1" value="1000000">
+          <div class="preset-row" aria-label="Placement presets">
+            <button type="button" data-steps="160">OEIS</button>
+            <button type="button" data-steps="10000">10k</button>
+            <button type="button" data-steps="100000">100k</button>
+            <button type="button" data-steps="1000000">Video</button>
+            <button type="button" data-steps="2000000">2M</button>
+          </div>
           <div class="button-row">
             <button id="backStep" type="button" title="Back one placement" aria-label="Back one placement">-1</button>
             <button id="playPause" type="button" title="Play" aria-label="Play">Play</button>
@@ -41,61 +63,90 @@
           </div>
         </section>
 
-        <section class="control-group">
+        <section class="control-group queue-panel">
           <div class="field-row">
-            <span class="control-label">Cycle Queue</span>
+            <span class="control-label">Turn Queue</span>
             <span id="queueCount" class="small-status">2 players</span>
           </div>
           <div id="queueDropZone" class="queue-dropzone" aria-label="Piece cycle queue"></div>
           <div class="button-row">
+            <button id="openPieceDrawer" type="button">Pieces</button>
             <button id="clearQueue" type="button">Clear</button>
             <button id="resetQueue" type="button">Reset</button>
           </div>
           <p id="queueMessage" class="panel-message" aria-live="polite"></p>
         </section>
 
-        <section class="control-group">
-          <div class="field-row">
-            <span class="control-label">Piece Palette</span>
-            <span class="small-status">drag or add</span>
+        <details class="advanced-panel">
+          <summary>Advanced</summary>
+          <div class="advanced-content">
+            <section class="advanced-section intro-card" id="rules">
+              <h2>Rules</h2>
+              <p>Each player scans the square spiral from their last position and places the next piece on the first empty square not attacked by an opponent.</p>
+            </section>
+
+            <section class="advanced-section compact">
+              <label class="toggle">
+                <input id="showAttacks" type="checkbox">
+                <span>Attacks</span>
+              </label>
+              <label class="toggle">
+                <input id="showSpiral" type="checkbox" checked>
+                <span>Spiral</span>
+              </label>
+              <label class="toggle">
+                <input id="showIndexes" type="checkbox">
+                <span>Indexes</span>
+              </label>
+            </section>
+
+            <section class="advanced-section">
+              <div class="field-row">
+                <label for="speedRange">Playback speed</label>
+                <output id="speedValue" for="speedRange">8/s</output>
+              </div>
+              <input id="speedRange" type="range" min="1" max="60" step="1" value="8">
+            </section>
+
+            <section class="advanced-section sequence-panel">
+              <h2>Spiral Indices</h2>
+              <div id="sequenceList" class="sequence-list"></div>
+            </section>
+
+            <section class="advanced-section sequence-panel">
+              <h2>Recent Placements</h2>
+              <ol id="placementList"></ol>
+            </section>
           </div>
-          <div id="piecePalette" class="piece-palette"></div>
-        </section>
+        </details>
 
-        <section class="control-group compact">
-          <label class="toggle">
-            <input id="showAttacks" type="checkbox">
-            <span>Attacks</span>
-          </label>
-          <label class="toggle">
-            <input id="showSpiral" type="checkbox" checked>
-            <span>Spiral</span>
-          </label>
-          <label class="toggle">
-            <input id="showIndexes" type="checkbox">
-            <span>Indexes</span>
-          </label>
-        </section>
-
-        <section class="control-group">
-          <div class="field-row">
-            <label for="speedRange">Speed</label>
-            <output id="speedValue" for="speedRange">8/s</output>
+        <footer class="support-panel">
+          <div>
+            <strong>Enjoying the spiral?</strong>
+            <p>Support the experiments and future rule sets.</p>
           </div>
-          <input id="speedRange" type="range" min="1" max="60" step="1" value="8">
-        </section>
-
-        <section class="sequence-panel">
-          <h2>Spiral Indices</h2>
-          <div id="sequenceList" class="sequence-list"></div>
-        </section>
-
-        <section class="sequence-panel">
-          <h2>Recent Placements</h2>
-          <ol id="placementList"></ol>
-        </section>
+          <!-- Replace this href with your creator page before publishing. -->
+          <a class="support-button" href="https://www.buymeacoffee.com/" target="_blank" rel="noreferrer">Buy me a coffee</a>
+        </footer>
       </aside>
     </main>
+
+    <div id="pieceDrawerBackdrop" class="drawer-backdrop" hidden></div>
+    <aside id="pieceDrawer" class="piece-drawer" aria-hidden="true" aria-label="Fairy piece drawer">
+      <header class="drawer-header">
+        <div>
+          <p class="eyebrow">Fairy pieces</p>
+          <h2>Piece Palette</h2>
+          <p>Click a card to add it, or drag it into the queue. Duplicates are allowed.</p>
+        </div>
+        <button id="closePieceDrawer" type="button" aria-label="Close piece drawer">Close</button>
+      </header>
+      <details id="pieceDetailToggle" class="drawer-advanced">
+        <summary>Show movement diagrams</summary>
+        <p>Dots are leaper targets. Blue rays are rider directions.</p>
+      </details>
+      <div id="piecePalette" class="piece-palette"></div>
+    </aside>
 
     <script src="app.js"></script>
   </body>

@@ -111,6 +111,11 @@ const PLAYER_STYLES = [
 
 const elements = {
   board: document.querySelector("#board"),
+  boardStatus: document.querySelector("#boardStatus"),
+  boardStatusDetail: document.querySelector("#boardStatusDetail"),
+  boardStatusFill: document.querySelector("#boardStatusFill"),
+  boardStatusTitle: document.querySelector("#boardStatusTitle"),
+  closePieceDrawer: document.querySelector("#closePieceDrawer"),
   stepsRange: document.querySelector("#stepsRange"),
   stepsNumber: document.querySelector("#stepsNumber"),
   backStep: document.querySelector("#backStep"),
@@ -128,11 +133,16 @@ const elements = {
   sequenceList: document.querySelector("#sequenceList"),
   placementList: document.querySelector("#placementList"),
   piecePalette: document.querySelector("#piecePalette"),
+  pieceDetailToggle: document.querySelector("#pieceDetailToggle"),
+  pieceDrawer: document.querySelector("#pieceDrawer"),
+  pieceDrawerBackdrop: document.querySelector("#pieceDrawerBackdrop"),
   queueDropZone: document.querySelector("#queueDropZone"),
   queueCount: document.querySelector("#queueCount"),
   queueMessage: document.querySelector("#queueMessage"),
+  openPieceDrawer: document.querySelector("#openPieceDrawer"),
   clearQueue: document.querySelector("#clearQueue"),
   resetQueue: document.querySelector("#resetQueue"),
+  presetButtons: document.querySelectorAll("[data-steps]"),
 };
 
 const ctx = elements.board.getContext("2d");
@@ -592,28 +602,45 @@ function createPaletteCard(pieceDefinition) {
   const text = document.createElement("div");
   const name = document.createElement("h3");
   const description = document.createElement("p");
-  const button = document.createElement("button");
+  let wasDragged = false;
 
   card.className = "piece-card";
   card.draggable = true;
   card.dataset.pieceId = pieceDefinition.id;
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.setAttribute("aria-label", `Add ${pieceDefinition.name} to queue`);
   top.className = "piece-card-top";
   symbol.className = "piece-symbol";
   symbol.textContent = pieceDefinition.symbol;
   name.textContent = pieceDefinition.name;
   description.textContent = pieceDefinition.description;
-  button.type = "button";
-  button.textContent = "Add";
-  button.addEventListener("click", () => addPieceToQueue(pieceDefinition.id));
 
   card.addEventListener("dragstart", (event) => {
+    wasDragged = true;
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/x-piece-id", pieceDefinition.id);
+  });
+  card.addEventListener("dragend", () => {
+    window.setTimeout(() => {
+      wasDragged = false;
+    }, 0);
+  });
+  card.addEventListener("click", () => {
+    if (!wasDragged) {
+      addPieceToQueue(pieceDefinition.id);
+    }
+  });
+  card.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      addPieceToQueue(pieceDefinition.id);
+    }
   });
 
   text.append(name, description);
   top.append(symbol, text);
-  card.append(top, createPieceDiagram(pieceDefinition), button);
+  card.append(top, createPieceDiagram(pieceDefinition));
   return card;
 }
 
@@ -675,11 +702,11 @@ function maxPieceDistance(pieceDefinition) {
 
 function renderQueue() {
   elements.queueDropZone.replaceChildren(...state.queue.map((pieceId, index) => createQueueCard(pieceId, index)));
-  for (let index = state.queue.length; index < MAX_QUEUE_LENGTH; index += 1) {
+  if (state.queue.length < MAX_QUEUE_LENGTH) {
     const slot = document.createElement("div");
     slot.className = "queue-slot empty";
-    slot.textContent = index === state.queue.length ? "Drop piece here" : "Empty";
-    slot.dataset.insertIndex = String(index);
+    slot.textContent = "Drop piece here";
+    slot.dataset.insertIndex = String(state.queue.length);
     addDropHandlers(slot);
     elements.queueDropZone.append(slot);
   }
@@ -711,17 +738,23 @@ function createQueueCard(pieceId, index) {
   controls.className = "queue-card-controls";
 
   up.type = "button";
-  up.textContent = "Up";
+  up.textContent = "↑";
+  up.title = "Move earlier";
+  up.setAttribute("aria-label", "Move earlier");
   up.disabled = index === 0;
   up.addEventListener("click", () => moveQueueCard(index, index - 1));
 
   down.type = "button";
-  down.textContent = "Down";
+  down.textContent = "↓";
+  down.title = "Move later";
+  down.setAttribute("aria-label", "Move later");
   down.disabled = index === state.queue.length - 1;
   down.addEventListener("click", () => moveQueueCard(index, index + 2));
 
   remove.type = "button";
-  remove.textContent = "Remove";
+  remove.textContent = "×";
+  remove.title = "Remove";
+  remove.setAttribute("aria-label", "Remove");
   remove.addEventListener("click", () => removeQueueCard(index));
 
   card.addEventListener("dragstart", (event) => {
@@ -881,6 +914,7 @@ function setTargetSteps(nextSteps) {
   elements.stepsNumber.value = String(clamped);
   growStepsRange(clamped);
   elements.stepsRange.value = String(clamped);
+  updatePresetButtons();
   scheduleSimulation(90);
 }
 
@@ -908,6 +942,7 @@ function cappedTargetSteps(nextSteps, notify = true) {
 function enforceTargetLimitForQueue() {
   const capped = cappedTargetSteps(state.targetSteps);
   if (capped === state.targetSteps) {
+    updatePresetButtons();
     return;
   }
 
@@ -915,6 +950,26 @@ function enforceTargetLimitForQueue() {
   elements.stepsNumber.value = String(capped);
   growStepsRange(capped);
   elements.stepsRange.value = String(capped);
+  updatePresetButtons();
+}
+
+function updatePresetButtons() {
+  elements.presetButtons.forEach((button) => {
+    const isActive = Number(button.dataset.steps) === state.targetSteps;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+}
+
+function setPieceDrawerOpen(isOpen) {
+  elements.pieceDrawer.classList.toggle("is-open", isOpen);
+  elements.pieceDrawer.setAttribute("aria-hidden", String(!isOpen));
+  elements.pieceDrawerBackdrop.hidden = !isOpen;
+  document.body.classList.toggle("drawer-open", isOpen);
+}
+
+function syncPieceDetailMode() {
+  elements.pieceDrawer.classList.toggle("show-piece-details", elements.pieceDetailToggle.open);
 }
 
 function queueHasRider() {
@@ -976,7 +1031,7 @@ function canUseWorker() {
 function startWorkerRun(runId, config) {
   try {
     state.workerMode = "worker";
-    const worker = new Worker("simulation-worker.js");
+    const worker = createSimulationWorker();
     state.worker = worker;
     worker.onmessage = (event) => handleWorkerMessage(runId, config, event.data);
     worker.onerror = (event) => {
@@ -992,6 +1047,45 @@ function startWorkerRun(runId, config) {
     console.warn("Falling back to chunked main-thread simulation", error);
     startFallbackRun(runId, config);
   }
+}
+
+function createSimulationWorker() {
+  if (typeof Blob !== "undefined" && typeof URL !== "undefined") {
+    const workerUrl = URL.createObjectURL(new Blob([createWorkerSource()], { type: "text/javascript" }));
+    const worker = new Worker(workerUrl);
+    setTimeout(() => URL.revokeObjectURL(workerUrl), 1000);
+    return worker;
+  }
+  return new Worker("simulation-worker.js");
+}
+
+function createWorkerSource() {
+  return `
+    "use strict";
+    const simulationEngine = (${createSimulationEngine.toString()})();
+    self.onmessage = (event) => {
+      const { config, runId } = event.data;
+      try {
+        const game = simulationEngine.createGame(config);
+        game.runToTarget(
+          config.targetSteps,
+          (snapshot) => self.postMessage({ runId, snapshot, type: "progress" }),
+          config.progressEvery
+        );
+        const result = game.finalResult();
+        self.postMessage(
+          { result, runId, type: "complete" },
+          [result.indices.buffer, result.playerIds.buffer, result.xs.buffer, result.ys.buffer]
+        );
+      } catch (error) {
+        self.postMessage({
+          message: error instanceof Error ? error.message : String(error),
+          runId,
+          type: "error",
+        });
+      }
+    };
+  `;
 }
 
 function handleWorkerMessage(runId, config, message) {
@@ -1110,6 +1204,7 @@ function startTileIndexBuild(result) {
     if (index < result.xs.length) {
       state.indexProgress = Math.round((index / result.xs.length) * 100);
       renderQueueMessage();
+      updateBoardStatus(state.activeSnapshot || emptySnapshot());
       state.indexBuildFrame = requestAnimationFrame(buildChunk);
       return;
     }
@@ -1118,6 +1213,7 @@ function startTileIndexBuild(result) {
     state.indexing = false;
     state.indexProgress = 100;
     renderQueueMessage();
+    updateBoardStatus(state.activeSnapshot || emptySnapshot());
     drawBoard();
   };
 
@@ -1134,6 +1230,36 @@ function updatePanels() {
   updateSequence(snapshot);
   updateRecent(snapshot);
   renderQueueMessage();
+  updateBoardStatus(snapshot);
+}
+
+function updateBoardStatus(snapshot) {
+  if (state.queue.length < 2) {
+    elements.boardStatus.hidden = false;
+    elements.boardStatusTitle.textContent = "Queue needs two pieces";
+    elements.boardStatusDetail.textContent = "Add at least two cards to start the simulation.";
+    elements.boardStatusFill.style.width = "0%";
+    return;
+  }
+
+  if (state.indexing) {
+    elements.boardStatus.hidden = false;
+    elements.boardStatusTitle.textContent = "Preparing map view";
+    elements.boardStatusDetail.textContent = `${state.indexProgress}% indexed`;
+    elements.boardStatusFill.style.width = `${state.indexProgress}%`;
+    return;
+  }
+
+  if (state.running) {
+    const progress = state.targetSteps ? Math.min(100, (snapshot.completed / state.targetSteps) * 100) : 100;
+    elements.boardStatus.hidden = false;
+    elements.boardStatusTitle.textContent = "Building spiral";
+    elements.boardStatusDetail.textContent = `${snapshot.completed.toLocaleString()} / ${state.targetSteps.toLocaleString()} placements`;
+    elements.boardStatusFill.style.width = `${progress}%`;
+    return;
+  }
+
+  elements.boardStatus.hidden = true;
 }
 
 function updateStats(snapshot) {
@@ -1633,6 +1759,18 @@ elements.playPause.addEventListener("click", togglePlayback);
 elements.speedRange.addEventListener("input", () => {
   elements.speedValue.value = `${elements.speedRange.value}/s`;
 });
+elements.presetButtons.forEach((button) => {
+  button.addEventListener("click", () => setTargetSteps(Number(button.dataset.steps)));
+});
+elements.openPieceDrawer.addEventListener("click", () => setPieceDrawerOpen(true));
+elements.closePieceDrawer.addEventListener("click", () => setPieceDrawerOpen(false));
+elements.pieceDrawerBackdrop.addEventListener("click", () => setPieceDrawerOpen(false));
+elements.pieceDetailToggle.addEventListener("toggle", syncPieceDetailMode);
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    setPieceDrawerOpen(false);
+  }
+});
 
 elements.showAttacks.addEventListener("change", drawBoard);
 elements.showSpiral.addEventListener("change", drawBoard);
@@ -1713,5 +1851,6 @@ window.addEventListener("resize", drawBoard);
 
 renderPalette();
 renderQueue();
+updatePresetButtons();
 validateAgainstOeisPrefix();
 scheduleSimulation(0);
