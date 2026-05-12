@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Knight Spiral</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Knight Spiral</h1>
+        <a href="https://oeis.org/A392177" target="_blank" rel="noreferrer">OEIS A392177</a>
+      </div>
+      <div class="summary" id="summaryStats" aria-live="polite">
+        <span><strong id="placementCount">0</strong> placements</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="board-shell" aria-label="Knight spiral board">
+        <canvas id="board" aria-label="Knight spiral visualization"></canvas>
+        <div class="canvas-tools">
+          <button id="zoomOut" type="button" title="Zoom out" aria-label="Zoom out">-</button>
+          <button id="fitBoard" type="button" title="Fit board" aria-label="Fit board">[]</button>
+          <button id="zoomIn" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+        </div>
+      </section>
+
+      <aside class="side-panel" aria-label="Simulation controls">
+        <section class="control-group">
+          <div class="field-row">
+            <label for="stepsRange">Placements</label>
+            <input id="stepsNumber" type="number" min="0" step="1" value="160" aria-label="Placement count">
+          </div>
+          <input id="stepsRange" type="range" min="0" max="2500" step="1" value="160">
+          <div class="button-row">
+            <button id="backStep" type="button" title="Back one placement" aria-label="Back one placement">-1</button>
+            <button id="playPause" type="button" title="Play" aria-label="Play">Play</button>
+            <button id="forwardStep" type="button" title="Forward one placement" aria-label="Forward one placement">+1</button>
+          </div>
+        </section>
+
+        <section class="control-group">
+          <div class="field-row">
+            <span class="control-label">Cycle Queue</span>
+            <span id="queueCount" class="small-status">2 players</span>
+          </div>
+          <div id="queueDropZone" class="queue-dropzone" aria-label="Piece cycle queue"></div>
+          <div class="button-row">
+            <button id="clearQueue" type="button">Clear</button>
+            <button id="resetQueue" type="button">Reset</button>
+          </div>
+          <p id="queueMessage" class="panel-message" aria-live="polite"></p>
+        </section>
+
+        <section class="control-group">
+          <div class="field-row">
+            <span class="control-label">Piece Palette</span>
+            <span class="small-status">drag or add</span>
+          </div>
+          <div id="piecePalette" class="piece-palette"></div>
+        </section>
+
+        <section class="control-group compact">
+          <label class="toggle">
+            <input id="showAttacks" type="checkbox">
+            <span>Attacks</span>
+          </label>
+          <label class="toggle">
+            <input id="showSpiral" type="checkbox" checked>
+            <span>Spiral</span>
+          </label>
+          <label class="toggle">
+            <input id="showIndexes" type="checkbox">
+            <span>Indexes</span>
+          </label>
+        </section>
+
+        <section class="control-group">
+          <div class="field-row">
+            <label for="speedRange">Speed</label>
+            <output id="speedValue" for="speedRange">8/s</output>
+          </div>
+          <input id="speedRange" type="range" min="1" max="60" step="1" value="8">
+        </section>
+
+        <section class="sequence-panel">
+          <h2>Spiral Indices</h2>
+          <div id="sequenceList" class="sequence-list"></div>
+        </section>
+
+        <section class="sequence-panel">
+          <h2>Recent Placements</h2>
+          <ol id="placementList"></ol>
+        </section>
+      </aside>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
