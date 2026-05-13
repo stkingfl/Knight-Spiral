@@ -187,6 +187,7 @@ const elements = {
   presetDrawer: document.querySelector("#presetDrawer"),
   presetList: document.querySelector("#presetList"),
   revealUi: document.querySelector("#revealUi"),
+  sheetHandle: document.querySelector("#sheetHandle"),
   speedRange: document.querySelector("#speedRange"),
   speedValue: document.querySelector("#speedValue"),
   showAttacks: document.querySelector("#showAttacks"),
@@ -243,6 +244,8 @@ const state = {
   worker: null,
   workerMode: "worker",
   zoom: 1,
+  sheetExpanded: true,
+  sheetGesture: null,
 };
 
 const pointerState = {
@@ -1331,6 +1334,9 @@ function setPieceDrawerOpen(isOpen) {
   elements.openPieceDrawer.setAttribute("aria-pressed", String(isOpen));
   document.body.classList.toggle("piece-panel-open", isOpen);
   if (isOpen) {
+    setControlSheetExpanded(true);
+  }
+  if (isOpen) {
     setPresetDrawerOpen(false);
     setAdvancedDrawerOpen(false);
   }
@@ -1360,6 +1366,54 @@ function closeDrawers() {
     drawer.setAttribute("aria-hidden", "true");
   }
   syncDrawerBackdrop();
+}
+
+function setControlSheetExpanded(isExpanded) {
+  state.sheetExpanded = isExpanded;
+  document.body.classList.toggle("sheet-collapsed", !isExpanded);
+  elements.sheetHandle?.setAttribute("aria-expanded", String(isExpanded));
+  elements.sheetHandle?.setAttribute("aria-label", isExpanded ? "Collapse controls" : "Expand controls");
+}
+
+function startSheetGesture(event) {
+  if (!elements.sheetHandle) {
+    return;
+  }
+  event.preventDefault();
+  elements.sheetHandle.setPointerCapture(event.pointerId);
+  state.sheetGesture = {
+    id: event.pointerId,
+    moved: false,
+    startY: event.clientY,
+  };
+  document.body.classList.add("sheet-dragging");
+}
+
+function moveSheetGesture(event) {
+  const gesture = state.sheetGesture;
+  if (!gesture || gesture.id !== event.pointerId) {
+    return;
+  }
+  if (Math.abs(event.clientY - gesture.startY) > 6) {
+    gesture.moved = true;
+  }
+}
+
+function endSheetGesture(event) {
+  const gesture = state.sheetGesture;
+  if (!gesture || gesture.id !== event.pointerId) {
+    return;
+  }
+  const deltaY = event.clientY - gesture.startY;
+  state.sheetGesture = null;
+  document.body.classList.remove("sheet-dragging");
+  if (deltaY > 24) {
+    setControlSheetExpanded(false);
+  } else if (deltaY < -24) {
+    setControlSheetExpanded(true);
+  } else {
+    setControlSheetExpanded(!state.sheetExpanded);
+  }
 }
 
 function syncDrawerBackdrop() {
@@ -2509,6 +2563,11 @@ elements.hideUi.addEventListener("click", () => setUiHidden(true));
 elements.revealUi.addEventListener("click", () => setUiHidden(false));
 elements.pieceDrawerBackdrop.addEventListener("click", closeDrawers);
 elements.pieceDetailToggle.addEventListener("toggle", syncPieceDetailMode);
+elements.sheetHandle?.addEventListener("pointerdown", startSheetGesture);
+elements.sheetHandle?.addEventListener("pointermove", moveSheetGesture);
+elements.sheetHandle?.addEventListener("pointerup", endSheetGesture);
+elements.sheetHandle?.addEventListener("pointercancel", endSheetGesture);
+elements.sheetHandle?.addEventListener("lostpointercapture", endSheetGesture);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closeDrawers();
@@ -2603,5 +2662,6 @@ renderPalette();
 renderPresets();
 renderQueue();
 updatePresetButtons();
+setControlSheetExpanded(true);
 validateAgainstOeisPrefix();
 scheduleSimulation(0);
