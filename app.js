@@ -330,6 +330,12 @@ function mergeRiders(...groups) {
 function createSimulationEngine() {
   const COORD_OFFSET = 1048576;
   const COORD_BASE = 2097152;
+  const DENSE_BOARD_SIZE = 3000;
+  const DENSE_BOARD_MIN = -1500;
+  const DENSE_BOARD_MAX = DENSE_BOARD_MIN + DENSE_BOARD_SIZE - 1;
+  const DENSE_BOARD_CELLS = DENSE_BOARD_SIZE * DENSE_BOARD_SIZE;
+  const DENSE_MAX_INDEX = (2 * Math.max(Math.abs(DENSE_BOARD_MIN), Math.abs(DENSE_BOARD_MAX)) + 1) ** 2 - 1;
+  const DENSE_MAX_PLAYERS = 8;
   const INITIAL_CAPACITY = 1024;
   const SEQUENCE_LIMIT = 120;
   const RECENT_LIMIT = 16;
@@ -412,8 +418,162 @@ function createSimulationEngine() {
     }
   }
 
-  class FastGame {
+  class DenseLeaperGame {
     constructor(config) {
+      this.mode = "dense";
+      this.players = config.players;
+      this.activeCount = this.players.length;
+      this.activeMask = (1 << this.activeCount) - 1;
+      this.movesByPlayer = this.players.map((player) => player.leaperOffsets);
+      this.tileColors = new Uint8Array(DENSE_BOARD_CELLS);
+      this.attacked = new Uint8Array(DENSE_BOARD_CELLS);
+      this.nextCandidates = new Int32Array(this.activeCount);
+      this.exhausted = new Uint8Array(this.activeCount);
+      this.counts = new Uint32Array(this.activeCount);
+      this.placements = new PlacementStore();
+      this.turnCursor = 0;
+      this.finished = false;
+      this.sequenceTerms = this.players.map(() => []);
+      this.recent = [];
+      this.minX = Infinity;
+      this.maxX = -Infinity;
+      this.minY = Infinity;
+      this.maxY = -Infinity;
+      this.coordScratch = [0, 0];
+    }
+
+    get completed() {
+      return this.placements.length;
+    }
+
+    runToTarget(targetSteps, onProgress, progressEvery = 25000) {
+      while (this.completed < targetSteps && !this.finished) {
+        this.step();
+        if (onProgress && (this.completed % progressEvery === 0 || this.finished)) {
+          onProgress(this.snapshot());
+        }
+      }
+    }
+
+    step() {
+      if (this.finished) {
+        return false;
+      }
+
+      let checked = 0;
+      while (checked < this.activeCount) {
+        const playerIndex = this.turnCursor;
+        this.turnCursor = (this.turnCursor + 1) % this.activeCount;
+
+        if (this.exhausted[playerIndex]) {
+          checked += 1;
+          continue;
+        }
+
+        const move = this.findMove(playerIndex);
+        if (move) {
+          this.place(playerIndex, move.index, move.x, move.y, move.offset);
+          return true;
+        }
+        checked += 1;
+      }
+
+      this.finished = true;
+      return false;
+    }
+
+    findMove(playerIndex) {
+      const ownBit = 1 << playerIndex;
+      const attackMask = this.activeCount === 1 ? ownBit : this.activeMask & ~ownBit;
+      let candidate = this.nextCandidates[playerIndex];
+
+      while (candidate <= DENSE_MAX_INDEX) {
+        spiralCoordInto(candidate, this.coordScratch);
+        const x = this.coordScratch[0];
+        const y = this.coordScratch[1];
+
+        if (inDenseBoard(x, y)) {
+          const offset = denseBoardOffset(x, y);
+          if (this.tileColors[offset] === 0 && (this.attacked[offset] & attackMask) === 0) {
+            this.nextCandidates[playerIndex] = candidate + 1;
+            return { index: candidate, offset, x, y };
+          }
+        }
+        candidate += 1;
+      }
+
+      this.nextCandidates[playerIndex] = DENSE_MAX_INDEX + 1;
+      this.exhausted[playerIndex] = 1;
+      return null;
+    }
+
+    place(playerIndex, spiralIndex, x, y, offset) {
+      const colorValue = playerIndex + 1;
+      const colorBit = 1 << playerIndex;
+      this.tileColors[offset] = colorValue;
+      this.counts[playerIndex] += 1;
+      this.placements.append(spiralIndex, x, y, playerIndex);
+
+      for (const [dx, dy] of this.movesByPlayer[playerIndex]) {
+        const attackX = x + dx;
+        const attackY = y + dy;
+        if (inDenseBoard(attackX, attackY)) {
+          this.attacked[denseBoardOffset(attackX, attackY)] |= colorBit;
+        }
+      }
+
+      this.minX = Math.min(this.minX, x);
+      this.maxX = Math.max(this.maxX, x);
+      this.minY = Math.min(this.minY, y);
+      this.maxY = Math.max(this.maxY, y);
+      insertSortedTerm(this.sequenceTerms[playerIndex], spiralIndex);
+
+      this.recent.push({ index: spiralIndex, playerIndex, turnNumber: this.completed - 1, x, y });
+      if (this.recent.length > RECENT_LIMIT) {
+        this.recent.shift();
+      }
+    }
+
+    snapshot() {
+      return {
+        bounds: this.bounds(),
+        completed: this.completed,
+        counts: Array.from(this.counts),
+        mode: this.mode,
+        players: this.players,
+        recent: this.recent.slice(),
+        sequenceTerms: this.sequenceTerms.map((terms) => terms.slice()),
+      };
+    }
+
+    finalResult() {
+      return {
+        ...this.snapshot(),
+        ...this.placements.trim(),
+        attacked: this.attacked,
+        board: {
+          maxIndex: DENSE_MAX_INDEX,
+          maxX: DENSE_BOARD_MAX,
+          maxY: DENSE_BOARD_MAX,
+          minX: DENSE_BOARD_MIN,
+          minY: DENSE_BOARD_MIN,
+          size: DENSE_BOARD_SIZE,
+        },
+        tileColors: this.tileColors,
+      };
+    }
+
+    bounds() {
+      if (!this.completed) {
+        return { maxX: 4, maxY: 4, minX: -4, minY: -4 };
+      }
+      return { maxX: this.maxX, maxY: this.maxY, minX: this.minX, minY: this.minY };
+    }
+  }
+
+  class SparseGame {
+    constructor(config) {
+      this.mode = "sparse";
       this.players = config.players;
       this.cursors = this.players.map(() => new SpiralCursor());
       this.counts = new Uint32Array(this.players.length);
@@ -550,6 +710,7 @@ function createSimulationEngine() {
         bounds: this.bounds(),
         completed: this.completed,
         counts: Array.from(this.counts),
+        mode: this.mode,
         players: this.players,
         recent: this.recent.slice(),
         sequenceTerms: this.sequenceTerms.map((terms) => terms.slice()),
@@ -569,6 +730,45 @@ function createSimulationEngine() {
       }
       return { maxX: this.maxX, maxY: this.maxY, minX: this.minX, minY: this.minY };
     }
+  }
+
+  function ringForIndex(index) {
+    return Math.ceil((Math.sqrt(index + 1) - 1) / 2);
+  }
+
+  function spiralCoordInto(index, out) {
+    if (index === 0) {
+      out[0] = 0;
+      out[1] = 0;
+      return;
+    }
+
+    const ring = ringForIndex(index);
+    const start = (2 * ring - 1) * (2 * ring - 1);
+    const side = 2 * ring;
+    const offset = index - start;
+
+    if (offset < side) {
+      out[0] = ring;
+      out[1] = -ring + 1 + offset;
+    } else if (offset < 2 * side) {
+      out[0] = ring - 1 - (offset - side);
+      out[1] = ring;
+    } else if (offset < 3 * side) {
+      out[0] = -ring;
+      out[1] = ring - 1 - (offset - 2 * side);
+    } else {
+      out[0] = -ring + 1 + (offset - 3 * side);
+      out[1] = -ring;
+    }
+  }
+
+  function inDenseBoard(x, y) {
+    return x >= DENSE_BOARD_MIN && x <= DENSE_BOARD_MAX && y >= DENSE_BOARD_MIN && y <= DENSE_BOARD_MAX;
+  }
+
+  function denseBoardOffset(x, y) {
+    return (DENSE_BOARD_MAX - y) * DENSE_BOARD_SIZE + (x - DENSE_BOARD_MIN);
   }
 
   function insertSortedTerm(terms, value) {
@@ -603,8 +803,16 @@ function createSimulationEngine() {
     return (key % COORD_BASE) - COORD_OFFSET;
   }
 
+  function canUseDense(config) {
+    return (
+      config.players.length > 0 &&
+      config.players.length <= DENSE_MAX_PLAYERS &&
+      config.players.every((player) => player.riderVectors.length === 0)
+    );
+  }
+
   function createGame(config) {
-    return new FastGame(config);
+    return canUseDense(config) ? new DenseLeaperGame(config) : new SparseGame(config);
   }
 
   return { createGame, packCoord, unpackX, unpackY };
@@ -1240,6 +1448,10 @@ function startSimulation() {
   const runId = state.runId + 1;
   state.runId = runId;
   state.running = true;
+  state.activeResult = null;
+  state.tileIndexReady = false;
+  state.tileIndex = new Map();
+  state.occupiedIndex = new Map();
   state.activeSnapshot = {
     bounds: { maxX: 4, maxY: 4, minX: -4, minY: -4 },
     completed: 0,
@@ -1308,9 +1520,16 @@ function createWorkerSource() {
           config.progressEvery
         );
         const result = game.finalResult();
+        const transferables = [result.indices.buffer, result.playerIds.buffer, result.xs.buffer, result.ys.buffer];
+        if (result.tileColors) {
+          transferables.push(result.tileColors.buffer);
+        }
+        if (result.attacked) {
+          transferables.push(result.attacked.buffer);
+        }
         self.postMessage(
           { result, runId, type: "complete" },
-          [result.indices.buffer, result.playerIds.buffer, result.xs.buffer, result.ys.buffer]
+          transferables
         );
       } catch (error) {
         self.postMessage({
@@ -1339,7 +1558,14 @@ function handleWorkerMessage(runId, config, message) {
     state.activeResult = message.result;
     state.activeSnapshot = message.result;
     state.worker = null;
-    startTileIndexBuild(message.result);
+    if (isDenseResult(message.result)) {
+      state.tileIndexReady = true;
+      state.indexing = false;
+      state.indexProgress = 100;
+      prepareDensePreview(message.result);
+    } else {
+      startTileIndexBuild(message.result);
+    }
     updatePanels();
     drawBoard();
   }
@@ -1377,7 +1603,14 @@ function startFallbackRun(runId, config) {
     state.running = false;
     state.activeResult = game.finalResult();
     state.activeSnapshot = state.activeResult;
-    startTileIndexBuild(state.activeResult);
+    if (isDenseResult(state.activeResult)) {
+      state.tileIndexReady = true;
+      state.indexing = false;
+      state.indexProgress = 100;
+      prepareDensePreview(state.activeResult);
+    } else {
+      startTileIndexBuild(state.activeResult);
+    }
     updatePanels();
     drawBoard();
   };
@@ -1567,6 +1800,64 @@ function resizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
+function isDenseResult(result) {
+  return Boolean(result?.mode === "dense" && result.board && result.tileColors);
+}
+
+function prepareDensePreview(result) {
+  if (!isDenseResult(result) || result.previewCanvas) {
+    return result?.previewCanvas || null;
+  }
+
+  const { board } = result;
+  const preview = document.createElement("canvas");
+  preview.width = board.size;
+  preview.height = board.size;
+  const previewCtx = preview.getContext("2d", { alpha: false });
+  const imageData = previewCtx.createImageData(board.size, board.size);
+  const data = imageData.data;
+  const palette = result.players.map((player) => cssColorToRgb(player.color));
+
+  data.fill(255);
+  for (let offset = 0; offset < result.tileColors.length; offset += 1) {
+    const colorIndex = result.tileColors[offset] - 1;
+    if (colorIndex < 0) {
+      continue;
+    }
+    const rgb = palette[colorIndex];
+    const pixel = offset * 4;
+    data[pixel] = rgb[0];
+    data[pixel + 1] = rgb[1];
+    data[pixel + 2] = rgb[2];
+    data[pixel + 3] = 255;
+  }
+
+  previewCtx.putImageData(imageData, 0, 0);
+  result.previewCanvas = preview;
+  result.previewPalette = palette;
+  return preview;
+}
+
+function cssColorToRgb(color) {
+  if (!cssColorToRgb.context) {
+    cssColorToRgb.context = document.createElement("canvas").getContext("2d");
+  }
+  const parser = cssColorToRgb.context;
+  parser.fillStyle = "#000000";
+  parser.fillStyle = color;
+  const normalized = parser.fillStyle;
+  if (normalized.startsWith("#")) {
+    const hex = normalized.slice(1);
+    const value = Number.parseInt(hex.length === 3 ? hex.replace(/(.)/g, "$1$1") : hex.slice(0, 6), 16);
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  }
+  const match = normalized.match(/\d+(\.\d+)?/g);
+  if (!match) {
+    return [0, 0, 0];
+  }
+  return match.slice(0, 3).map((part) => clamp(Math.round(Number(part)), 0, 255));
+}
+
 function drawBoard() {
   resizeCanvas();
   const snapshot = state.activeSnapshot || emptySnapshot();
@@ -1576,6 +1867,12 @@ function drawBoard() {
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#f7fafc";
   ctx.fillRect(0, 0, width, height);
+
+  if (isDenseResult(state.activeResult)) {
+    drawDenseBoard(state.activeResult, bounds, originX, originY, cellSize, width, height);
+    return;
+  }
+
   drawGrid(bounds, originX, originY, cellSize);
 
   if (elements.showSpiral.checked) {
@@ -1631,11 +1928,13 @@ function paddedBounds(bounds) {
   };
 }
 
-function drawGrid(bounds, originX, originY, cellSize) {
+function drawGrid(bounds, originX, originY, cellSize, fillBoard = true) {
   const cols = bounds.maxX - bounds.minX + 1;
   const rows = bounds.maxY - bounds.minY + 1;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(originX, originY, cols * cellSize, rows * cellSize);
+  if (fillBoard) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(originX, originY, cols * cellSize, rows * cellSize);
+  }
 
   if (cellSize < 6) {
     return;
@@ -1655,6 +1954,141 @@ function drawGrid(bounds, originX, originY, cellSize) {
     ctx.lineTo(originX + cols * cellSize, y);
   }
   ctx.stroke();
+}
+
+function drawDenseBoard(result, bounds, originX, originY, cellSize, width, height) {
+  const cols = bounds.maxX - bounds.minX + 1;
+  const rows = bounds.maxY - bounds.minY + 1;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(originX, originY, cols * cellSize, rows * cellSize);
+  drawDensePatternBitmap(result, bounds, originX, originY, cellSize, width, height);
+
+  const visible = visibleWorldBounds(bounds, originX, originY, cellSize, width, height);
+  if (elements.showAttacks.checked) {
+    drawDenseAttackOverlay(result, bounds, originX, originY, cellSize, visible);
+  }
+  if (elements.showSpiral.checked) {
+    drawDenseTrace(result, bounds, originX, originY, cellSize, visible);
+  }
+  drawGrid(bounds, originX, originY, cellSize, false);
+  if (elements.showIndexes.checked && cellSize >= 18) {
+    drawDenseIndexes(result, bounds, originX, originY, cellSize, visible);
+  }
+}
+
+function drawDensePatternBitmap(result, bounds, originX, originY, cellSize, width, height) {
+  const preview = prepareDensePreview(result);
+  if (!preview) {
+    return;
+  }
+
+  const view = clampDenseView(result.board, visibleWorldBounds(bounds, originX, originY, cellSize, width, height));
+  if (!view) {
+    return;
+  }
+
+  const sourceX = view.minX - result.board.minX;
+  const sourceY = result.board.maxY - view.maxY;
+  const sourceWidth = view.maxX - view.minX + 1;
+  const sourceHeight = view.maxY - view.minY + 1;
+  const destX = originX + (view.minX - bounds.minX) * cellSize;
+  const destY = originY + (bounds.maxY - view.maxY) * cellSize;
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(
+    preview,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    destX,
+    destY,
+    sourceWidth * cellSize,
+    sourceHeight * cellSize
+  );
+}
+
+function drawDenseAttackOverlay(result, bounds, originX, originY, cellSize, visible) {
+  const view = clampDenseView(result.board, visible);
+  if (!view || (view.maxX - view.minX + 1) * (view.maxY - view.minY + 1) > 70000) {
+    return;
+  }
+
+  for (let y = view.minY; y <= view.maxY; y += 1) {
+    for (let x = view.minX; x <= view.maxX; x += 1) {
+      const offset = denseResultOffset(result.board, x, y);
+      if (result.tileColors[offset] || !result.attacked[offset]) {
+        continue;
+      }
+      const playerIndex = firstBitIndex(result.attacked[offset]);
+      ctx.fillStyle = result.players[playerIndex]?.attackColor || "rgba(34, 116, 165, 0.08)";
+      const [left, top] = cellCorner(x, y, bounds, originX, originY, cellSize);
+      ctx.fillRect(left + 1, top + 1, Math.max(1, cellSize - 2), Math.max(1, cellSize - 2));
+    }
+  }
+}
+
+function drawDenseTrace(result, bounds, originX, originY, cellSize, visible) {
+  if (cellSize < 5) {
+    return;
+  }
+
+  const view = clampDenseView(result.board, visible);
+  if (!view || (view.maxX - view.minX + 1) * (view.maxY - view.minY + 1) > 40000) {
+    return;
+  }
+
+  ctx.strokeStyle = cellSize < 14 ? "rgba(34, 116, 165, 0.24)" : "rgba(34, 116, 165, 0.34)";
+  ctx.lineWidth = Math.max(1, Math.min(4, cellSize * 0.08));
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+
+  for (let y = view.minY; y <= view.maxY; y += 1) {
+    for (let x = view.minX; x <= view.maxX; x += 1) {
+      const index = spiralIndexForCoord(x, y);
+      if (index >= result.board.maxIndex) {
+        continue;
+      }
+      const next = spiralCoord(index + 1);
+      if (!inDenseResultBoard(result.board, next.x, next.y)) {
+        continue;
+      }
+      const [startX, startY] = cellCenter(x, y, bounds, originX, originY, cellSize);
+      const [endX, endY] = cellCenter(next.x, next.y, bounds, originX, originY, cellSize);
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(endX, endY);
+    }
+  }
+
+  ctx.stroke();
+}
+
+function drawDenseIndexes(result, bounds, originX, originY, cellSize, visible) {
+  const view = clampDenseView(result.board, visible);
+  if (!view || (view.maxX - view.minX + 1) * (view.maxY - view.minY + 1) > 6000) {
+    return;
+  }
+
+  const maxRing = Math.max(Math.abs(view.minX), Math.abs(view.maxX), Math.abs(view.minY), Math.abs(view.maxY));
+  const largestVisibleLabel = (2 * maxRing + 1) * (2 * maxRing + 1) - 1;
+  const fontSize = clamp(Math.floor(cellSize * 0.28), 9, 18);
+  ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  if (ctx.measureText(String(largestVisibleLabel)).width > cellSize * 0.72) {
+    return;
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (let y = view.minY; y <= view.maxY; y += 1) {
+    for (let x = view.minX; x <= view.maxX; x += 1) {
+      const offset = denseResultOffset(result.board, x, y);
+      const value = result.tileColors[offset];
+      const [centerX, centerY] = cellCenter(x, y, bounds, originX, originY, cellSize);
+      ctx.fillStyle = value ? "#ffffff" : "#607080";
+      ctx.fillText(String(spiralIndexForCoord(x, y)), centerX, centerY + 0.5);
+    }
+  }
 }
 
 function drawSpiral(snapshot, bounds, originX, originY, cellSize) {
@@ -1866,6 +2300,76 @@ function cellCenter(x, y, bounds, originX, originY, cellSize) {
 
 function inBounds(cell, bounds) {
   return cell.x >= bounds.minX && cell.x <= bounds.maxX && cell.y >= bounds.minY && cell.y <= bounds.maxY;
+}
+
+function clampDenseView(board, view) {
+  const minX = clamp(view.minX, board.minX, board.maxX);
+  const maxX = clamp(view.maxX, board.minX, board.maxX);
+  const minY = clamp(view.minY, board.minY, board.maxY);
+  const maxY = clamp(view.maxY, board.minY, board.maxY);
+  if (minX > maxX || minY > maxY) {
+    return null;
+  }
+  return { maxX, maxY, minX, minY };
+}
+
+function denseResultOffset(board, x, y) {
+  return (board.maxY - y) * board.size + (x - board.minX);
+}
+
+function inDenseResultBoard(board, x, y) {
+  return x >= board.minX && x <= board.maxX && y >= board.minY && y <= board.maxY;
+}
+
+function firstBitIndex(mask) {
+  return Math.max(0, Math.log2(mask & -mask));
+}
+
+function ringForSpiralIndex(index) {
+  return Math.ceil((Math.sqrt(index + 1) - 1) / 2);
+}
+
+function spiralCoord(index) {
+  if (index === 0) {
+    return { x: 0, y: 0 };
+  }
+
+  const ring = ringForSpiralIndex(index);
+  const start = (2 * ring - 1) * (2 * ring - 1);
+  const side = 2 * ring;
+  const offset = index - start;
+
+  if (offset < side) {
+    return { x: ring, y: -ring + 1 + offset };
+  }
+  if (offset < 2 * side) {
+    return { x: ring - 1 - (offset - side), y: ring };
+  }
+  if (offset < 3 * side) {
+    return { x: -ring, y: ring - 1 - (offset - 2 * side) };
+  }
+  return { x: -ring + 1 + (offset - 3 * side), y: -ring };
+}
+
+function spiralIndexForCoord(x, y) {
+  if (x === 0 && y === 0) {
+    return 0;
+  }
+
+  const ring = Math.max(Math.abs(x), Math.abs(y));
+  const start = (2 * ring - 1) * (2 * ring - 1);
+  const side = 2 * ring;
+
+  if (x === ring && y >= -ring + 1) {
+    return start + y + ring - 1;
+  }
+  if (y === ring) {
+    return start + side + (ring - 1 - x);
+  }
+  if (x === -ring) {
+    return start + 2 * side + (ring - 1 - y);
+  }
+  return start + 3 * side + (x + ring - 1);
 }
 
 function clamp(value, min, max) {

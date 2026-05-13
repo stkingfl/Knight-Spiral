@@ -12,7 +12,7 @@
   --amber-accent: #bf7a1f;
   --shadow: 0 14px 40px rgba(22, 32, 42, 0.1);
   --tight-shadow: 0 8px 24px rgba(22, 32, 42, 0.09);
-  --topbar-height: 92px;
+  --topbar-height: 86px;
 }
 
 * {
@@ -45,19 +45,15 @@ input {
 }
 
 .topbar {
-  align-items: center;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  justify-content: space-between;
+  display: block;
   min-height: var(--topbar-height);
-  padding: 14px 22px 12px;
+  padding: 9px 20px 8px;
 }
 
 h1 {
-  font-size: 1.55rem;
+  font-size: clamp(1.35rem, 2.1vw, 1.9rem);
   font-weight: 820;
   letter-spacing: 0;
   line-height: 1.1;
@@ -65,9 +61,13 @@ h1 {
 }
 
 .brand-block {
-  flex: 1 1 360px;
-  max-width: 620px;
+  align-items: end;
+  column-gap: 20px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  max-width: none;
   min-width: 0;
+  row-gap: 3px;
 }
 
 .eyebrow,
@@ -77,25 +77,27 @@ h1 {
 
 .eyebrow {
   color: var(--blue-accent);
-  font-size: 0.74rem;
+  font-size: 0.7rem;
   font-weight: 850;
   letter-spacing: 0.08em;
+  grid-column: 1 / -1;
   text-transform: uppercase;
 }
 
 .tagline {
+  align-self: center;
   color: var(--muted);
-  font-size: 0.92rem;
+  font-size: 0.88rem;
   font-weight: 620;
-  line-height: 1.35;
-  margin-top: 4px;
+  line-height: 1.25;
+  margin-top: 0;
   overflow-wrap: anywhere;
 }
 
 .top-links {
   display: flex;
-  gap: 14px;
-  margin-top: 6px;
+  gap: 12px;
+  margin-top: 0;
 }
 
 .video-callout {
@@ -103,10 +105,12 @@ h1 {
   color: var(--muted);
   display: flex;
   flex-wrap: wrap;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 760;
-  gap: 8px;
-  margin-top: 8px;
+  gap: 6px;
+  justify-content: flex-start;
+  margin-top: 0;
+  min-width: 0;
 }
 
 .video-callout a {
@@ -117,10 +121,10 @@ h1 {
   box-shadow: 0 4px 14px rgba(168, 51, 51, 0.08);
   color: #9c2d2d;
   display: inline-flex;
-  font-size: 0.78rem;
-  gap: 8px;
-  min-height: 30px;
-  padding: 4px 10px 4px 5px;
+  font-size: 0.74rem;
+  gap: 7px;
+  min-height: 28px;
+  padding: 3px 9px 3px 5px;
 }
 
 .video-callout a:hover {
@@ -165,7 +169,7 @@ a:hover {
 }
 
 .summary {
-  display: flex;
+  display: none;
   flex: 1 1 360px;
   flex-wrap: wrap;
   gap: 10px;
@@ -1383,15 +1387,26 @@ h2 {
 
 @media (max-width: 900px) {
   .topbar {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 12px;
-    min-height: 136px;
+    min-height: 0;
+    padding: 8px 14px;
   }
 
-  .summary {
-    justify-content: flex-start;
-    width: 100%;
+  .brand-block {
+    align-items: start;
+    grid-template-columns: 1fr;
+    row-gap: 4px;
+  }
+
+  .tagline {
+    font-size: 0.82rem;
+  }
+
+  .video-callout {
+    gap: 5px;
+  }
+
+  .video-callout a {
+    max-width: 100%;
   }
 
   .app-shell {
@@ -1454,30 +1469,33 @@ h2 {
   }
 
   .topbar {
+    min-height: 0;
     padding-left: 12px;
     padding-right: 12px;
   }
 
   h1 {
-    font-size: 1.35rem;
+    font-size: 1.22rem;
+  }
+
+  .eyebrow {
+    font-size: 0.64rem;
   }
 
   .tagline {
-    font-size: 0.86rem;
+    display: none;
   }
 
-  .summary span {
+  .top-links {
+    gap: 10px;
+  }
+
+  .top-links a {
     font-size: 0.82rem;
-    padding: 7px 8px;
   }
 
-  .summary {
-    display: grid;
-    grid-template-columns: 1fr;
-  }
-
-  .summary span {
-    min-width: 0;
+  .video-callout {
+    display: none;
   }
 
   input[type="number"] {
