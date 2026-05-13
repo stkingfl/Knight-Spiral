@@ -13,7 +13,6 @@ const MAX_QUEUE_LENGTH = 5;
 const DEFAULT_QUEUE = ["knight", "knight"];
 const TILE_CELLS = 32;
 const TILE_INDEX_CHUNK = 60000;
-const MAX_TARGET_STEPS = 2_000_000;
 const RIDER_STEP_CAP = 25_000;
 const RIDER_WARNING_STEPS = 5_000;
 
@@ -101,6 +100,7 @@ const PIECE_CATALOG = [
 ];
 
 const PIECES_BY_ID = new Map(PIECE_CATALOG.map((pieceDefinition) => [pieceDefinition.id, pieceDefinition]));
+const VISIBLE_PIECE_CATALOG = PIECE_CATALOG.filter((pieceDefinition) => pieceDefinition.riderVectors.length === 0);
 const simulationEngine = createSimulationEngine();
 
 const PLAYER_STYLES = [
@@ -109,18 +109,84 @@ const PLAYER_STYLES = [
   { name: "Blue", color: "#2274a5", attackColor: "rgba(34, 116, 165, 0.08)" },
 ];
 
+const PRESET_LIBRARY = [
+  {
+    description: "The recognizable two-knight territory from the video.",
+    id: "video-shape",
+    name: "Video Shape",
+    queue: ["knight", "knight"],
+    steps: 1_000_000,
+  },
+  {
+    description: "A short run for checking the OEIS prefix and early spiral terms.",
+    id: "oeis-prefix",
+    name: "OEIS Prefix",
+    queue: ["knight", "knight"],
+    steps: 160,
+  },
+  {
+    description: "Three leapers with different jump lengths competing on the same spiral.",
+    id: "three-leapers",
+    name: "Three Leapers",
+    queue: ["knight", "camel", "zebra"],
+    steps: 100_000,
+  },
+  {
+    description: "Old leapers with tiny moves make dense, inspectable texture.",
+    id: "ancient-leapers",
+    name: "Ancient Leapers",
+    queue: ["wazir", "ferz", "alfil", "dabbaba"],
+    steps: 250_000,
+  },
+  {
+    description: "Five compound leapers with broad jump vocabularies.",
+    id: "hybrid-stack",
+    name: "Hybrid Stack",
+    queue: ["gnu", "buffalo", "squirrel", "champion", "mastodon"],
+    steps: 500_000,
+  },
+];
+
+const ICON_PATHS = {
+  "chevron-down": ["M6 9l6 6 6-6"],
+  "chevron-up": ["M6 15l6-6 6 6"],
+  "eye-off": ["M3 3l18 18", "M10.7 5.1A10.8 10.8 0 0 1 12 5c5 0 9 4.5 10 7a12 12 0 0 1-3.1 4.6", "M6.2 6.2A12.2 12.2 0 0 0 2 12c1 2.5 5 7 10 7a10.9 10.9 0 0 0 4.3-.9", "M9.9 9.9a3 3 0 0 0 4.2 4.2"],
+  fit: ["M8 3H3v5", "M16 3h5v5", "M21 16v5h-5", "M8 21H3v-5", "M3 3l6 6", "M21 3l-6 6", "M21 21l-6-6", "M3 21l6-6"],
+  knight: ["M7 20h10", "M8 17h8l-1-5 2-2-2-5-5-2-3 3 2 2-3 3 2 6z", "M10 8h.01", "M9 13l3-1"],
+  panel: ["M4 5h16v14H4z", "M4 15h16", "M9 15v4"],
+  pieces: ["M12 3l4 4-4 4-4-4 4-4z", "M6 13l3 3-3 3-3-3 3-3z", "M18 13l3 3-3 3-3-3 3-3z"],
+  play: ["M8 5v14l11-7-11-7z"],
+  pause: ["M8 5v14", "M16 5v14"],
+  presets: ["M5 6h14", "M5 12h14", "M5 18h14", "M4 6h.01", "M4 12h.01", "M4 18h.01"],
+  reset: ["M20 6v6h-6", "M20 12a8 8 0 1 1-2.3-5.7L20 9"],
+  sliders: ["M4 6h8", "M16 6h4", "M4 12h4", "M12 12h8", "M4 18h10", "M18 18h2", "M12 4v4", "M8 10v4", "M16 16v4"],
+  "step-back": ["M12 5l-7 7 7 7", "M5 12h14"],
+  "step-forward": ["M12 5l7 7-7 7", "M5 12h14"],
+  trash: ["M4 7h16", "M10 11v6", "M14 11v6", "M6 7l1 14h10l1-14", "M9 7V4h6v3"],
+  x: ["M6 6l12 12", "M18 6L6 18"],
+  "zoom-in": ["M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z", "M20 20l-4.3-4.3", "M11 8v6", "M8 11h6"],
+  "zoom-out": ["M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12z", "M20 20l-4.3-4.3", "M8 11h6"],
+};
+
 const elements = {
+  advancedDrawer: document.querySelector("#advancedDrawer"),
   board: document.querySelector("#board"),
   boardStatus: document.querySelector("#boardStatus"),
   boardStatusDetail: document.querySelector("#boardStatusDetail"),
   boardStatusFill: document.querySelector("#boardStatusFill"),
   boardStatusTitle: document.querySelector("#boardStatusTitle"),
+  closeAdvancedDrawer: document.querySelector("#closeAdvancedDrawer"),
   closePieceDrawer: document.querySelector("#closePieceDrawer"),
+  closePresetDrawer: document.querySelector("#closePresetDrawer"),
   stepsRange: document.querySelector("#stepsRange"),
   stepsNumber: document.querySelector("#stepsNumber"),
   backStep: document.querySelector("#backStep"),
   forwardStep: document.querySelector("#forwardStep"),
+  hideUi: document.querySelector("#hideUi"),
   playPause: document.querySelector("#playPause"),
+  presetDrawer: document.querySelector("#presetDrawer"),
+  presetList: document.querySelector("#presetList"),
+  revealUi: document.querySelector("#revealUi"),
   speedRange: document.querySelector("#speedRange"),
   speedValue: document.querySelector("#speedValue"),
   showAttacks: document.querySelector("#showAttacks"),
@@ -139,7 +205,9 @@ const elements = {
   queueDropZone: document.querySelector("#queueDropZone"),
   queueCount: document.querySelector("#queueCount"),
   queueMessage: document.querySelector("#queueMessage"),
+  openAdvancedDrawer: document.querySelector("#openAdvancedDrawer"),
   openPieceDrawer: document.querySelector("#openPieceDrawer"),
+  openPresetDrawer: document.querySelector("#openPresetDrawer"),
   clearQueue: document.querySelector("#clearQueue"),
   resetQueue: document.querySelector("#resetQueue"),
   presetButtons: document.querySelectorAll("[data-steps]"),
@@ -171,6 +239,7 @@ const state = {
   targetSteps: Number(elements.stepsNumber.value),
   tileIndex: new Map(),
   tileIndexReady: false,
+  uiHidden: false,
   worker: null,
   workerMode: "worker",
   zoom: 1,
@@ -592,7 +661,78 @@ function progressEveryForTarget(targetSteps) {
 }
 
 function renderPalette() {
-  elements.piecePalette.replaceChildren(...PIECE_CATALOG.map((pieceDefinition) => createPaletteCard(pieceDefinition)));
+  elements.piecePalette.replaceChildren(...VISIBLE_PIECE_CATALOG.map((pieceDefinition) => createPaletteCard(pieceDefinition)));
+}
+
+function createSvgIcon(iconName) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  svg.classList.add("svg-icon");
+  for (const pathData of ICON_PATHS[iconName] || ICON_PATHS.x) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    svg.append(path);
+  }
+  return svg;
+}
+
+function setIconButton(button, iconName, label) {
+  button.classList.add("icon-button");
+  button.replaceChildren(createSvgIcon(iconName));
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.dataset.tooltip = label;
+  button.dataset.icon = iconName;
+}
+
+function hydrateIconButtons() {
+  document.querySelectorAll("[data-icon]").forEach((button) => {
+    const label = button.getAttribute("aria-label") || button.title || button.dataset.tooltip || "";
+    setIconButton(button, button.dataset.icon, label);
+  });
+}
+
+function renderPresets() {
+  elements.presetList.replaceChildren(...PRESET_LIBRARY.map((preset) => createPresetCard(preset)));
+  updatePresetButtons();
+}
+
+function createPresetCard(preset) {
+  const button = document.createElement("button");
+  const text = document.createElement("span");
+  const name = document.createElement("strong");
+  const description = document.createElement("span");
+  const meta = document.createElement("span");
+  const chips = document.createElement("span");
+
+  button.type = "button";
+  button.className = "preset-card";
+  button.dataset.presetId = preset.id;
+  button.setAttribute("aria-label", `Load ${preset.name} preset`);
+
+  text.className = "preset-card-text";
+  name.textContent = preset.name;
+  description.textContent = preset.description;
+
+  meta.className = "preset-meta";
+  meta.textContent = `${preset.steps.toLocaleString()} placements`;
+
+  chips.className = "preset-piece-row";
+  for (const pieceId of preset.queue) {
+    const pieceDefinition = pieceForId(pieceId);
+    const chip = document.createElement("span");
+    chip.className = "preset-piece";
+    chip.textContent = pieceDefinition.symbol;
+    chip.title = pieceDefinition.name;
+    chips.append(chip);
+  }
+
+  text.append(name, description, meta);
+  button.append(text, chips);
+  button.addEventListener("click", () => applyPreset(preset.id));
+  return button;
 }
 
 function createPaletteCard(pieceDefinition) {
@@ -602,7 +742,8 @@ function createPaletteCard(pieceDefinition) {
   const text = document.createElement("div");
   const name = document.createElement("h3");
   const description = document.createElement("p");
-  let wasDragged = false;
+  const addButton = document.createElement("button");
+  let suppressClickUntil = 0;
 
   card.className = "piece-card";
   card.draggable = true;
@@ -615,21 +756,35 @@ function createPaletteCard(pieceDefinition) {
   symbol.textContent = pieceDefinition.symbol;
   name.textContent = pieceDefinition.name;
   description.textContent = pieceDefinition.description;
+  addButton.type = "button";
+  addButton.className = "piece-add-button";
+  addButton.textContent = "Add";
+  addButton.draggable = false;
+  addButton.setAttribute("aria-label", `Add ${pieceDefinition.name}`);
 
   card.addEventListener("dragstart", (event) => {
-    wasDragged = true;
+    suppressClickUntil = performance.now() + 800;
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("application/x-piece-id", pieceDefinition.id);
   });
   card.addEventListener("dragend", () => {
-    window.setTimeout(() => {
-      wasDragged = false;
-    }, 0);
+    suppressClickUntil = performance.now() + 800;
   });
-  card.addEventListener("click", () => {
-    if (!wasDragged) {
-      addPieceToQueue(pieceDefinition.id);
+  card.addEventListener("click", (event) => {
+    if (performance.now() < suppressClickUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
     }
+    addPieceToQueue(pieceDefinition.id);
+  });
+  addButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    addPieceToQueue(pieceDefinition.id);
+  });
+  addButton.addEventListener("dragstart", (event) => {
+    event.preventDefault();
   });
   card.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -640,7 +795,7 @@ function createPaletteCard(pieceDefinition) {
 
   text.append(name, description);
   top.append(symbol, text);
-  card.append(top, createPieceDiagram(pieceDefinition));
+  card.append(top, createPieceDiagram(pieceDefinition), addButton);
   return card;
 }
 
@@ -705,7 +860,10 @@ function renderQueue() {
   if (state.queue.length < MAX_QUEUE_LENGTH) {
     const slot = document.createElement("div");
     slot.className = "queue-slot empty";
-    slot.textContent = "Drop piece here";
+    slot.title = "Drop piece here";
+    slot.setAttribute("aria-label", "Drop piece here");
+    slot.dataset.tooltip = "Drop piece here";
+    slot.append(createSvgIcon("pieces"));
     slot.dataset.insertIndex = String(state.queue.length);
     addDropHandlers(slot);
     elements.queueDropZone.append(slot);
@@ -721,7 +879,9 @@ function createQueueCard(pieceId, index) {
   const style = playerStyleAt(index);
   const card = document.createElement("article");
   const symbol = document.createElement("strong");
-  const name = document.createElement("span");
+  const label = document.createElement("span");
+  const player = document.createElement("small");
+  const pieceName = document.createElement("span");
   const controls = document.createElement("div");
   const up = document.createElement("button");
   const down = document.createElement("button");
@@ -734,27 +894,24 @@ function createQueueCard(pieceId, index) {
   card.style.setProperty("--player-color", style.color);
   symbol.className = "piece-symbol";
   symbol.textContent = pieceDefinition.symbol;
-  name.textContent = `${style.name}: ${pieceDefinition.name}`;
+  label.className = "queue-card-label";
+  player.textContent = `${index + 1}. ${style.name}`;
+  pieceName.textContent = pieceDefinition.name;
+  label.append(player, pieceName);
   controls.className = "queue-card-controls";
 
   up.type = "button";
-  up.textContent = "↑";
-  up.title = "Move earlier";
-  up.setAttribute("aria-label", "Move earlier");
+  setIconButton(up, "chevron-up", "Move earlier");
   up.disabled = index === 0;
   up.addEventListener("click", () => moveQueueCard(index, index - 1));
 
   down.type = "button";
-  down.textContent = "↓";
-  down.title = "Move later";
-  down.setAttribute("aria-label", "Move later");
+  setIconButton(down, "chevron-down", "Move later");
   down.disabled = index === state.queue.length - 1;
   down.addEventListener("click", () => moveQueueCard(index, index + 2));
 
   remove.type = "button";
-  remove.textContent = "×";
-  remove.title = "Remove";
-  remove.setAttribute("aria-label", "Remove");
+  setIconButton(remove, "x", "Remove");
   remove.addEventListener("click", () => removeQueueCard(index));
 
   card.addEventListener("dragstart", (event) => {
@@ -768,7 +925,7 @@ function createQueueCard(pieceId, index) {
 
   addDropHandlers(card);
   controls.append(up, down, remove);
-  card.append(symbol, name, controls);
+  card.append(symbol, label, controls);
   return card;
 }
 
@@ -776,15 +933,18 @@ function addDropHandlers(element) {
   element.addEventListener("dragover", (event) => {
     if (canAcceptDrop(event)) {
       event.preventDefault();
+      event.stopPropagation();
       updateDropHint(element, event);
       element.classList.add("drag-over");
     }
   });
-  element.addEventListener("dragleave", () => {
+  element.addEventListener("dragleave", (event) => {
+    event.stopPropagation();
     clearDropHint(element);
   });
   element.addEventListener("drop", (event) => {
     event.preventDefault();
+    event.stopPropagation();
     const insertIndex = dropIndexForElement(element, event);
     const pieceId = event.dataTransfer.getData("application/x-piece-id");
     const queueIndex = event.dataTransfer.getData("application/x-queue-index");
@@ -826,16 +986,11 @@ function dropIndexForElement(element, event) {
 
 function queueCardDropIndex(element, event) {
   const queueIndex = Number(element.dataset.queueIndex);
-  const draggedIndex = state.draggedQueueIndex;
-  if (Number.isInteger(draggedIndex) && draggedIndex !== queueIndex) {
-    return draggedIndex < queueIndex ? queueIndex + 1 : queueIndex;
-  }
-  return queueIndex + (event.clientY > cardMidpoint(element) ? 1 : 0);
-}
-
-function cardMidpoint(element) {
   const rect = element.getBoundingClientRect();
-  return rect.top + rect.height / 2;
+  const isHorizontal = rect.width > rect.height * 1.35;
+  const midpoint = isHorizontal ? rect.left + rect.width / 2 : rect.top + rect.height / 2;
+  const pointer = isHorizontal ? event.clientX : event.clientY;
+  return queueIndex + (pointer > midpoint ? 1 : 0);
 }
 
 function addPieceToQueue(pieceId, insertIndex = state.queue.length) {
@@ -908,26 +1063,23 @@ function flashQueueMessage(message) {
   }, 2600);
 }
 
+function syncTargetInputs(steps) {
+  elements.stepsNumber.value = String(steps);
+  growStepsRange(steps);
+  elements.stepsRange.value = String(steps);
+  updatePresetButtons();
+}
+
 function setTargetSteps(nextSteps) {
   const clamped = cappedTargetSteps(nextSteps);
   state.targetSteps = clamped;
-  elements.stepsNumber.value = String(clamped);
-  growStepsRange(clamped);
-  elements.stepsRange.value = String(clamped);
-  updatePresetButtons();
+  syncTargetInputs(clamped);
   scheduleSimulation(90);
 }
 
 function cappedTargetSteps(nextSteps, notify = true) {
   const numericSteps = Number(nextSteps);
   let clamped = Math.max(0, Math.round(Number.isFinite(numericSteps) ? numericSteps : 0));
-
-  if (clamped > MAX_TARGET_STEPS) {
-    clamped = MAX_TARGET_STEPS;
-    if (notify) {
-      flashQueueMessage(`Runs are capped at ${MAX_TARGET_STEPS.toLocaleString()} placements.`);
-    }
-  }
 
   if (queueHasRider() && clamped > RIDER_STEP_CAP) {
     clamped = RIDER_STEP_CAP;
@@ -947,23 +1099,63 @@ function enforceTargetLimitForQueue() {
   }
 
   state.targetSteps = capped;
-  elements.stepsNumber.value = String(capped);
-  growStepsRange(capped);
-  elements.stepsRange.value = String(capped);
-  updatePresetButtons();
+  syncTargetInputs(capped);
 }
 
 function updatePresetButtons() {
-  elements.presetButtons.forEach((button) => {
+  document.querySelectorAll("[data-steps]").forEach((button) => {
     const isActive = Number(button.dataset.steps) === state.targetSteps;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+  document.querySelectorAll("[data-preset-id]").forEach((button) => {
+    const preset = PRESET_LIBRARY.find((item) => item.id === button.dataset.presetId);
+    const isActive = Boolean(preset) && queuesMatch(state.queue, preset.queue) && state.targetSteps === cappedStepsForQueue(preset.steps, preset.queue);
     button.classList.toggle("is-active", isActive);
     button.setAttribute("aria-pressed", String(isActive));
   });
 }
 
 function setPieceDrawerOpen(isOpen) {
+  elements.pieceDrawer.hidden = !isOpen;
   elements.pieceDrawer.classList.toggle("is-open", isOpen);
   elements.pieceDrawer.setAttribute("aria-hidden", String(!isOpen));
+  elements.openPieceDrawer.setAttribute("aria-pressed", String(isOpen));
+  document.body.classList.toggle("piece-panel-open", isOpen);
+  if (isOpen) {
+    setPresetDrawerOpen(false);
+    setAdvancedDrawerOpen(false);
+  }
+}
+
+function setPresetDrawerOpen(isOpen) {
+  setDrawerOpen(elements.presetDrawer, isOpen);
+}
+
+function setAdvancedDrawerOpen(isOpen) {
+  setDrawerOpen(elements.advancedDrawer, isOpen);
+}
+
+function setDrawerOpen(drawer, isOpen) {
+  if (isOpen) {
+    closeDrawers();
+  }
+  drawer.classList.toggle("is-open", isOpen);
+  drawer.setAttribute("aria-hidden", String(!isOpen));
+  syncDrawerBackdrop();
+}
+
+function closeDrawers() {
+  setPieceDrawerOpen(false);
+  for (const drawer of [elements.presetDrawer, elements.advancedDrawer]) {
+    drawer.classList.remove("is-open");
+    drawer.setAttribute("aria-hidden", "true");
+  }
+  syncDrawerBackdrop();
+}
+
+function syncDrawerBackdrop() {
+  const isOpen = [elements.presetDrawer, elements.advancedDrawer].some((drawer) => drawer.classList.contains("is-open"));
   elements.pieceDrawerBackdrop.hidden = !isOpen;
   document.body.classList.toggle("drawer-open", isOpen);
 }
@@ -972,8 +1164,51 @@ function syncPieceDetailMode() {
   elements.pieceDrawer.classList.toggle("show-piece-details", elements.pieceDetailToggle.open);
 }
 
-function queueHasRider() {
-  return state.queue.some((pieceId) => pieceForId(pieceId).riderVectors.length > 0);
+function queueHasRider(queue = state.queue) {
+  return queue.some((pieceId) => pieceForId(pieceId).riderVectors.length > 0);
+}
+
+function cappedStepsForQueue(steps, queue) {
+  return queueHasRider(queue) && steps > RIDER_STEP_CAP ? RIDER_STEP_CAP : steps;
+}
+
+function queuesMatch(left, right) {
+  return left.length === right.length && left.every((pieceId, index) => pieceId === right[index]);
+}
+
+function applyPreset(presetId) {
+  const preset = PRESET_LIBRARY.find((item) => item.id === presetId);
+  if (!preset) {
+    return;
+  }
+  state.queue = preset.queue.slice(0, MAX_QUEUE_LENGTH);
+  renderQueue();
+  cancelActiveRun();
+  state.activeResult = null;
+  state.tileIndexReady = false;
+  state.tileIndex = new Map();
+  state.occupiedIndex = new Map();
+  state.targetSteps = cappedTargetSteps(preset.steps);
+  syncTargetInputs(state.targetSteps);
+  closeDrawers();
+  flashQueueMessage(`Loaded ${preset.name}.`);
+  scheduleSimulation(0);
+}
+
+function setUiHidden(isHidden) {
+  state.uiHidden = isHidden;
+  document.body.classList.toggle("ui-hidden", isHidden);
+  elements.revealUi.hidden = !isHidden;
+  elements.hideUi.setAttribute("aria-pressed", String(isHidden));
+  if (isHidden) {
+    closeDrawers();
+  }
+  window.requestAnimationFrame(drawBoard);
+}
+
+function shouldIgnoreGlobalShortcut(event) {
+  const tagName = event.target?.tagName?.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select" || event.target?.isContentEditable;
 }
 
 function growStepsRange(steps) {
@@ -1721,9 +1956,7 @@ function animate(time) {
 
 function togglePlayback() {
   state.playing = !state.playing;
-  elements.playPause.textContent = state.playing ? "Pause" : "Play";
-  elements.playPause.title = state.playing ? "Pause" : "Play";
-  elements.playPause.setAttribute("aria-label", elements.playPause.title);
+  setIconButton(elements.playPause, state.playing ? "pause" : "play", state.playing ? "Pause" : "Play");
   if (state.playing) {
     state.lastPlayTime = 0;
     state.animationFrame = requestAnimationFrame(animate);
@@ -1762,13 +1995,25 @@ elements.speedRange.addEventListener("input", () => {
 elements.presetButtons.forEach((button) => {
   button.addEventListener("click", () => setTargetSteps(Number(button.dataset.steps)));
 });
-elements.openPieceDrawer.addEventListener("click", () => setPieceDrawerOpen(true));
+elements.openPieceDrawer.addEventListener("click", () => setPieceDrawerOpen(elements.pieceDrawer.hidden));
+elements.openPresetDrawer.addEventListener("click", () => setPresetDrawerOpen(true));
+elements.openAdvancedDrawer.addEventListener("click", () => setAdvancedDrawerOpen(true));
 elements.closePieceDrawer.addEventListener("click", () => setPieceDrawerOpen(false));
-elements.pieceDrawerBackdrop.addEventListener("click", () => setPieceDrawerOpen(false));
+elements.closePresetDrawer.addEventListener("click", () => setPresetDrawerOpen(false));
+elements.closeAdvancedDrawer.addEventListener("click", () => setAdvancedDrawerOpen(false));
+elements.hideUi.addEventListener("click", () => setUiHidden(true));
+elements.revealUi.addEventListener("click", () => setUiHidden(false));
+elements.pieceDrawerBackdrop.addEventListener("click", closeDrawers);
 elements.pieceDetailToggle.addEventListener("toggle", syncPieceDetailMode);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    setPieceDrawerOpen(false);
+    closeDrawers();
+    if (state.uiHidden) {
+      setUiHidden(false);
+    }
+  }
+  if (!shouldIgnoreGlobalShortcut(event) && event.key.toLowerCase() === "h") {
+    setUiHidden(!state.uiHidden);
   }
 });
 
@@ -1849,7 +2094,9 @@ elements.zoomIn.addEventListener("click", () => changeZoomAt(viewportCenterPoint
 elements.fitBoard.addEventListener("click", resetView);
 window.addEventListener("resize", drawBoard);
 
+hydrateIconButtons();
 renderPalette();
+renderPresets();
 renderQueue();
 updatePresetButtons();
 validateAgainstOeisPrefix();
