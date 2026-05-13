@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Knight Spiral Lab favicon">
+  <rect width="64" height="64" fill="#c73f46"/>
+  <g fill="#16202a" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" stroke-linecap="square" stroke-dasharray="1 1" shape-rendering="crispEdges">
+    <path d="M0 7h18v5h9v4h-5v4H0z"/>
+    <path d="M42 0h22v12h-9v4h9v9H40v-5h-4v-6h6z"/>
+    <path d="M28 0h9v19h-3v8h5v8h-5v29h-8V42h-4v-9h6z"/>
+    <path d="M0 30h18v-4h14v8H16v4H0z"/>
+    <path d="M40 30h24v10H51v4H39v-5h-4v-5h5z"/>
+    <path d="M0 47h14v4h6v5h-8v8H0z"/>
+    <path d="M44 52h20v12H39v-6h5z"/>
+  </g>
+  <g fill="none" stroke="#ffffff" stroke-width="1.4" stroke-linecap="square" stroke-dasharray="1 2" shape-rendering="crispEdges">
+    <path d="M20 18h10v24h-5v13"/>
+    <path d="M33 18h8v18h-4v18"/>
+    <path d="M8 25h20"/>
+    <path d="M36 25h22"/>
+    <path d="M8 42h18"/>
+    <path d="M38 46h20"/>
+  </g>
+  <g fill="#16202a" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="1 1" shape-rendering="crispEdges">
+    <rect x="46" y="19" width="4" height="4" rx="1"/>
+    <rect x="14" y="55" width="4" height="4" rx="1"/>
+    <rect x="52" y="47" width="3" height="3" rx="1"/>
+  </g>
+</svg>
