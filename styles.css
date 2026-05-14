@@ -297,6 +297,91 @@ button[data-tooltip]:focus-visible::after,
   transform: translate(-50%, 0);
 }
 
+.piece-hint {
+  --arrow-x: 50%;
+  --arrow-y: 50%;
+  align-items: center;
+  background: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  box-shadow: 0 12px 32px rgba(22, 32, 42, 0.24);
+  color: #ffffff;
+  display: flex;
+  font-size: 0.78rem;
+  font-weight: 780;
+  gap: 8px;
+  line-height: 1.15;
+  max-width: min(270px, calc(100vw - 20px));
+  opacity: 0;
+  padding: 8px 8px 8px 13px;
+  pointer-events: auto;
+  position: fixed;
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 32;
+}
+
+.piece-hint.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.piece-hint::after {
+  background: var(--ink);
+  content: "";
+  height: 10px;
+  position: absolute;
+  transform: rotate(45deg);
+  width: 10px;
+}
+
+.piece-hint[data-placement="bottom"]::after {
+  bottom: -5px;
+  left: calc(var(--arrow-x) - 5px);
+}
+
+.piece-hint[data-placement="top"]::after {
+  left: calc(var(--arrow-x) - 5px);
+  top: -5px;
+}
+
+.piece-hint[data-placement="left"]::after {
+  left: -5px;
+  top: calc(var(--arrow-y) - 5px);
+}
+
+.piece-hint[data-placement="right"]::after {
+  right: -5px;
+  top: calc(var(--arrow-y) - 5px);
+}
+
+.piece-hint-close {
+  background: rgba(255, 255, 255, 0.13);
+  border: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  flex: 0 0 24px;
+  height: 24px;
+  min-height: 24px;
+  min-width: 24px;
+  padding: 0;
+}
+
+.piece-hint-close .svg-icon {
+  height: 14px;
+  stroke-width: 3;
+  width: 14px;
+}
+
+.piece-hint-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.piece-hint-close:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.7);
+  outline-offset: 2px;
+}
+
 button:hover {
   border-color: #aab6c2;
 }

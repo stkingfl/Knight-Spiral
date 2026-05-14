@@ -203,6 +203,8 @@ const elements = {
   pieceDetailToggle: document.querySelector("#pieceDetailToggle"),
   pieceDrawer: document.querySelector("#pieceDrawer"),
   pieceDrawerBackdrop: document.querySelector("#pieceDrawerBackdrop"),
+  pieceHint: document.querySelector("#pieceHint"),
+  dismissPieceHint: document.querySelector("#dismissPieceHint"),
   queueDropZone: document.querySelector("#queueDropZone"),
   queueCount: document.querySelector("#queueCount"),
   queueMessage: document.querySelector("#queueMessage"),
@@ -246,6 +248,7 @@ const state = {
   zoom: 1,
   sheetExpanded: true,
   sheetGesture: null,
+  pieceHintDismissed: false,
 };
 
 const pointerState = {
@@ -1327,7 +1330,71 @@ function updatePresetButtons() {
   });
 }
 
+function isPieceHintVisible() {
+  return Boolean(elements.pieceHint && !elements.pieceHint.hidden);
+}
+
+function positionPieceHint() {
+  if (!isPieceHintVisible()) {
+    return;
+  }
+
+  const targetRect = elements.openPieceDrawer.getBoundingClientRect();
+  const hintRect = elements.pieceHint.getBoundingClientRect();
+  const margin = 10;
+  const gap = 12;
+  const centerX = targetRect.left + targetRect.width / 2;
+  const centerY = targetRect.top + targetRect.height / 2;
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  let left = centerX - hintRect.width / 2;
+  let top = targetRect.top - hintRect.height - gap;
+  let placement = "bottom";
+
+  if (targetRect.top < hintRect.height + gap + margin) {
+    top = targetRect.bottom + gap;
+    placement = "top";
+  }
+
+  left = clamp(left, margin, Math.max(margin, viewportWidth - hintRect.width - margin));
+  top = clamp(top, margin, Math.max(margin, viewportHeight - hintRect.height - margin));
+
+  elements.pieceHint.dataset.placement = placement;
+  elements.pieceHint.style.left = `${Math.round(left)}px`;
+  elements.pieceHint.style.top = `${Math.round(top)}px`;
+  elements.pieceHint.style.setProperty("--arrow-x", `${Math.round(clamp(centerX - left, 14, hintRect.width - 14))}px`);
+  elements.pieceHint.style.setProperty("--arrow-y", `${Math.round(clamp(centerY - top, 14, hintRect.height - 14))}px`);
+}
+
+function showPieceHint() {
+  if (!elements.pieceHint || state.pieceHintDismissed || state.uiHidden) {
+    return;
+  }
+
+  elements.pieceHint.hidden = false;
+  elements.openPieceDrawer.setAttribute("aria-describedby", "pieceHint");
+  elements.pieceHint.style.visibility = "hidden";
+  window.requestAnimationFrame(() => {
+    positionPieceHint();
+    elements.pieceHint.style.visibility = "";
+    elements.pieceHint.classList.add("is-visible");
+  });
+}
+
+function dismissPieceHint() {
+  if (!elements.pieceHint) {
+    return;
+  }
+  state.pieceHintDismissed = true;
+  elements.pieceHint.classList.remove("is-visible");
+  elements.pieceHint.hidden = true;
+  elements.openPieceDrawer.removeAttribute("aria-describedby");
+}
+
 function setPieceDrawerOpen(isOpen) {
+  if (isOpen) {
+    dismissPieceHint();
+  }
   elements.pieceDrawer.hidden = !isOpen;
   elements.pieceDrawer.classList.toggle("is-open", isOpen);
   elements.pieceDrawer.setAttribute("aria-hidden", String(!isOpen));
@@ -1373,6 +1440,9 @@ function setControlSheetExpanded(isExpanded) {
   document.body.classList.toggle("sheet-collapsed", !isExpanded);
   elements.sheetHandle?.setAttribute("aria-expanded", String(isExpanded));
   elements.sheetHandle?.setAttribute("aria-label", isExpanded ? "Collapse controls" : "Expand controls");
+  if (isPieceHintVisible()) {
+    window.requestAnimationFrame(positionPieceHint);
+  }
 }
 
 function startSheetGesture(event) {
@@ -1463,6 +1533,7 @@ function setUiHidden(isHidden) {
   elements.revealUi.hidden = !isHidden;
   elements.hideUi.setAttribute("aria-pressed", String(isHidden));
   if (isHidden) {
+    dismissPieceHint();
     closeDrawers();
   }
   window.requestAnimationFrame(drawBoard);
@@ -2553,12 +2624,16 @@ elements.speedRange.addEventListener("input", () => {
 elements.presetButtons.forEach((button) => {
   button.addEventListener("click", () => setTargetSteps(Number(button.dataset.steps)));
 });
-elements.openPieceDrawer.addEventListener("click", () => setPieceDrawerOpen(elements.pieceDrawer.hidden));
+elements.openPieceDrawer.addEventListener("click", () => {
+  dismissPieceHint();
+  setPieceDrawerOpen(elements.pieceDrawer.hidden);
+});
 elements.openPresetDrawer.addEventListener("click", () => setPresetDrawerOpen(true));
 elements.openAdvancedDrawer.addEventListener("click", () => setAdvancedDrawerOpen(true));
 elements.closePieceDrawer.addEventListener("click", () => setPieceDrawerOpen(false));
 elements.closePresetDrawer.addEventListener("click", () => setPresetDrawerOpen(false));
 elements.closeAdvancedDrawer.addEventListener("click", () => setAdvancedDrawerOpen(false));
+elements.dismissPieceHint?.addEventListener("click", dismissPieceHint);
 elements.hideUi.addEventListener("click", () => setUiHidden(true));
 elements.revealUi.addEventListener("click", () => setUiHidden(false));
 elements.pieceDrawerBackdrop.addEventListener("click", closeDrawers);
@@ -2570,6 +2645,7 @@ elements.sheetHandle?.addEventListener("pointercancel", endSheetGesture);
 elements.sheetHandle?.addEventListener("lostpointercapture", endSheetGesture);
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    dismissPieceHint();
     closeDrawers();
     if (state.uiHidden) {
       setUiHidden(false);
@@ -2656,6 +2732,11 @@ elements.zoomOut.addEventListener("click", () => changeZoomAt(viewportCenterPoin
 elements.zoomIn.addEventListener("click", () => changeZoomAt(viewportCenterPoint(), ZOOM_STEP));
 elements.fitBoard.addEventListener("click", resetView);
 window.addEventListener("resize", drawBoard);
+window.addEventListener("resize", () => {
+  if (isPieceHintVisible()) {
+    window.requestAnimationFrame(positionPieceHint);
+  }
+});
 
 hydrateIconButtons();
 renderPalette();
@@ -2664,4 +2745,5 @@ renderQueue();
 updatePresetButtons();
 setControlSheetExpanded(true);
 validateAgainstOeisPrefix();
+window.setTimeout(showPieceHint, 450);
 scheduleSimulation(0);
