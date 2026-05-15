@@ -6,9 +6,10 @@ const OEIS_A392177_PREFIX = [
   219, 229, 231, 233, 235, 237, 238, 239, 243,
 ];
 
-const MIN_ZOOM = 0.12;
+const MIN_ZOOM = 0.08;
 const MAX_ZOOM = 48;
 const ZOOM_STEP = 1.28;
+const MIN_CELL_SIZE = 0.04;
 const MAX_QUEUE_LENGTH = 5;
 const DEFAULT_QUEUE = ["knight", "knight"];
 const TILE_CELLS = 32;
@@ -2025,7 +2026,7 @@ function boardLayout(snapshot) {
   const cols = bounds.maxX - bounds.minX + 1;
   const rows = bounds.maxY - bounds.minY + 1;
   const baseCellSize = Math.min(Math.max(20, width - 44) / cols, Math.max(20, height - 44) / rows);
-  const cellSize = Math.max(1.2, baseCellSize * state.zoom);
+  const cellSize = Math.max(MIN_CELL_SIZE, baseCellSize * state.zoom);
   const boardWidth = cols * cellSize;
   const boardHeight = rows * cellSize;
   const fitOriginX = (width - boardWidth) / 2;
