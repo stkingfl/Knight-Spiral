@@ -43,7 +43,9 @@ function createSimulationEngine() {
   const DENSE_BOARD_MIN = -1500;
   const DENSE_BOARD_MAX = DENSE_BOARD_MIN + DENSE_BOARD_SIZE - 1;
   const DENSE_BOARD_CELLS = DENSE_BOARD_SIZE * DENSE_BOARD_SIZE;
-  const DENSE_MAX_INDEX = (2 * Math.max(Math.abs(DENSE_BOARD_MIN), Math.abs(DENSE_BOARD_MAX)) + 1) ** 2 - 1;
+  const DENSE_SQUARE_MAX_INDEX = (2 * Math.max(Math.abs(DENSE_BOARD_MIN), Math.abs(DENSE_BOARD_MAX)) + 1) ** 2 - 1;
+  const DENSE_HEX_MAX_RADIUS = Math.min(Math.abs(DENSE_BOARD_MIN), Math.abs(DENSE_BOARD_MAX));
+  const DENSE_HEX_MAX_INDEX = 1 + 3 * DENSE_HEX_MAX_RADIUS * (DENSE_HEX_MAX_RADIUS + 1) - 1;
   const DENSE_MAX_PLAYERS = 8;
   const INITIAL_CAPACITY = 1024;
   const SEQUENCE_LIMIT = 120;
@@ -84,6 +86,50 @@ function createSimulationEngine() {
           this.sidesAtLength = 0;
           this.sideLength += 1;
         }
+      }
+    }
+  }
+
+  class HexSpiralCursor {
+    constructor() {
+      this.x = 0;
+      this.y = 0;
+      this.index = -1;
+      this.ring = 0;
+      this.returnedInRing = 0;
+      this.directionIndex = 0;
+      this.stepInSide = 0;
+      this.directions = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+    }
+
+    next() {
+      if (this.index === -1) {
+        this.index = 0;
+        this.returnedInRing = 1;
+        return;
+      }
+
+      if (this.ring === 0 || this.returnedInRing >= this.ring * 6) {
+        this.ring += 1;
+        this.x = this.ring;
+        this.y = 0;
+        this.index += 1;
+        this.returnedInRing = 1;
+        this.directionIndex = 0;
+        this.stepInSide = 0;
+        return;
+      }
+
+      const direction = this.directions[this.directionIndex];
+      this.x += direction[0];
+      this.y += direction[1];
+      this.index += 1;
+      this.returnedInRing += 1;
+      this.stepInSide += 1;
+
+      if (this.stepInSide === this.ring) {
+        this.stepInSide = 0;
+        this.directionIndex = (this.directionIndex + 1) % this.directions.length;
       }
     }
   }
@@ -129,7 +175,9 @@ function createSimulationEngine() {
 
   class DenseLeaperGame {
     constructor(config) {
+      this.topology = denseTopologyForMode(config.boardMode);
       this.mode = "dense";
+      this.grid = this.topology.grid;
       this.players = config.players;
       this.activeCount = this.players.length;
       this.activeMask = (1 << this.activeCount) - 1;
@@ -196,13 +244,13 @@ function createSimulationEngine() {
       const attackMask = this.activeCount === 1 ? ownBit : this.activeMask & ~ownBit;
       let candidate = this.nextCandidates[playerIndex];
 
-      while (candidate <= DENSE_MAX_INDEX) {
-        spiralCoordInto(candidate, this.coordScratch);
+      while (candidate <= this.topology.maxIndex) {
+        this.topology.coordInto(candidate, this.coordScratch);
         const x = this.coordScratch[0];
         const y = this.coordScratch[1];
 
-        if (inDenseBoard(x, y)) {
-          const offset = denseBoardOffset(x, y);
+        if (this.topology.inBoard(x, y)) {
+          const offset = this.topology.offset(x, y);
           if (this.tileColors[offset] === 0 && (this.attacked[offset] & attackMask) === 0) {
             this.nextCandidates[playerIndex] = candidate + 1;
             return { index: candidate, offset, x, y };
@@ -211,7 +259,7 @@ function createSimulationEngine() {
         candidate += 1;
       }
 
-      this.nextCandidates[playerIndex] = DENSE_MAX_INDEX + 1;
+      this.nextCandidates[playerIndex] = this.topology.maxIndex + 1;
       this.exhausted[playerIndex] = 1;
       return null;
     }
@@ -226,8 +274,8 @@ function createSimulationEngine() {
       for (const [dx, dy] of this.movesByPlayer[playerIndex]) {
         const attackX = x + dx;
         const attackY = y + dy;
-        if (inDenseBoard(attackX, attackY)) {
-          this.attacked[denseBoardOffset(attackX, attackY)] |= colorBit;
+        if (this.topology.inBoard(attackX, attackY)) {
+          this.attacked[this.topology.offset(attackX, attackY)] |= colorBit;
         }
       }
 
@@ -248,6 +296,7 @@ function createSimulationEngine() {
         bounds: this.bounds(),
         completed: this.completed,
         counts: Array.from(this.counts),
+        grid: this.grid,
         mode: this.mode,
         players: this.players,
         recent: this.recent.slice(),
@@ -261,7 +310,8 @@ function createSimulationEngine() {
         ...this.placements.trim(),
         attacked: this.attacked,
         board: {
-          maxIndex: DENSE_MAX_INDEX,
+          grid: this.grid,
+          maxIndex: this.topology.maxIndex,
           maxX: DENSE_BOARD_MAX,
           maxY: DENSE_BOARD_MAX,
           minX: DENSE_BOARD_MIN,
@@ -283,8 +333,9 @@ function createSimulationEngine() {
   class SparseGame {
     constructor(config) {
       this.mode = "sparse";
+      this.grid = config.boardMode === "hex" ? "hex" : "square";
       this.players = config.players;
-      this.cursors = this.players.map(() => new SpiralCursor());
+      this.cursors = this.players.map(() => createCursor(this.grid));
       this.counts = new Uint32Array(this.players.length);
       this.leaperAttacked = this.players.map(() => new Set());
       this.occupied = new Map();
@@ -419,6 +470,7 @@ function createSimulationEngine() {
         bounds: this.bounds(),
         completed: this.completed,
         counts: Array.from(this.counts),
+        grid: this.grid,
         mode: this.mode,
         players: this.players,
         recent: this.recent.slice(),
@@ -480,6 +532,56 @@ function createSimulationEngine() {
     return (DENSE_BOARD_MAX - y) * DENSE_BOARD_SIZE + (x - DENSE_BOARD_MIN);
   }
 
+  function hexRingForIndex(index) {
+    if (index <= 0) {
+      return 0;
+    }
+    return Math.ceil((Math.sqrt(12 * index + 9) - 3) / 6);
+  }
+
+  function hexSpiralCoordInto(index, out) {
+    if (index === 0) {
+      out[0] = 0;
+      out[1] = 0;
+      return;
+    }
+
+    const ring = hexRingForIndex(index);
+    const start = 1 + 3 * (ring - 1) * ring;
+    const offset = index - start;
+    const side = Math.floor(offset / ring);
+    const step = offset % ring;
+    const directions = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+    let x = ring;
+    let y = 0;
+    for (let sideIndex = 0; sideIndex < side; sideIndex += 1) {
+      x += directions[sideIndex][0] * ring;
+      y += directions[sideIndex][1] * ring;
+    }
+    out[0] = x + directions[side][0] * step;
+    out[1] = y + directions[side][1] * step;
+  }
+
+  function denseTopologyForMode(mode) {
+    if (mode === "hex") {
+      return {
+        coordInto: hexSpiralCoordInto,
+        grid: "hex",
+        inBoard: inDenseBoard,
+        maxIndex: DENSE_HEX_MAX_INDEX,
+        offset: denseBoardOffset,
+      };
+    }
+
+    return {
+      coordInto: spiralCoordInto,
+      grid: "square",
+      inBoard: inDenseBoard,
+      maxIndex: DENSE_SQUARE_MAX_INDEX,
+      offset: denseBoardOffset,
+    };
+  }
+
   function insertSortedTerm(terms, value) {
     if (terms.length === SEQUENCE_LIMIT && value >= terms[terms.length - 1]) {
       return;
@@ -522,6 +624,10 @@ function createSimulationEngine() {
 
   function createGame(config) {
     return canUseDense(config) ? new DenseLeaperGame(config) : new SparseGame(config);
+  }
+
+  function createCursor(grid) {
+    return grid === "hex" ? new HexSpiralCursor() : new SpiralCursor();
   }
 
   return { createGame, packCoord, unpackX, unpackY };

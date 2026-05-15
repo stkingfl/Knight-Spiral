@@ -12,8 +12,15 @@ const ZOOM_STEP = 1.28;
 const MIN_CELL_SIZE = 0.04;
 const MAX_QUEUE_LENGTH = 5;
 const DEFAULT_QUEUE = ["knight", "knight"];
+const GRID_MODES = {
+  HEX: "hex",
+  SQUARE: "square",
+};
+const SQRT3 = Math.sqrt(3);
 const TILE_CELLS = 32;
 const TILE_INDEX_CHUNK = 60000;
+const HEX_PREVIEW_MAX_PIXELS = 6_000_000;
+const HEX_DETAIL_CELL_SIZE = 16;
 const RIDER_STEP_CAP = 25_000;
 const RIDER_WARNING_STEPS = 5_000;
 
@@ -45,7 +52,23 @@ const RIDER_SETS = {
   alibabarider: symmetricRiders([[2, 2], [2, 0]]),
 };
 
-const PIECE_CATALOG = [
+const HEX_MOVE_SETS = {
+  edge: hexDirectionalLeapers(1),
+  vertex: hexVertexLeapers(1),
+  alfil: hexVertexLeapers(2),
+  dabbaba: hexDirectionalLeapers(2),
+  knight: hexBentLeapers(1, 2),
+  camel: hexBentLeapers(1, 3),
+  zebra: hexBentLeapers(2, 3),
+  giraffe: hexBentLeapers(1, 4),
+  antelope: hexBentLeapers(3, 4),
+};
+
+HEX_MOVE_SETS.mann = HEX_MOVE_SETS.edge;
+HEX_MOVE_SETS.alibaba = mergeVectors(HEX_MOVE_SETS.alfil, HEX_MOVE_SETS.dabbaba);
+HEX_MOVE_SETS.squirrel = mergeVectors(HEX_MOVE_SETS.knight, HEX_MOVE_SETS.alfil, HEX_MOVE_SETS.dabbaba);
+
+const SQUARE_PIECE_CATALOG = [
   piece("knight", "Knight", "N", "Leaper: (1,2)", MOVE_SETS.knight),
   piece("king", "King / Mann", "K", "Leaper: one square in any direction", MOVE_SETS.mann),
   piece("wazir", "Wazir", "W", "Leaper: one square orthogonally", MOVE_SETS.wazir),
@@ -100,8 +123,44 @@ const PIECE_CATALOG = [
   piece("abbot", "Abbot", "B4N", "Bishop limited to 4 + Knight", MOVE_SETS.knight, symmetricRiders([[1, 1]], 4)),
 ];
 
-const PIECES_BY_ID = new Map(PIECE_CATALOG.map((pieceDefinition) => [pieceDefinition.id, pieceDefinition]));
-const VISIBLE_PIECE_CATALOG = PIECE_CATALOG.filter((pieceDefinition) => pieceDefinition.riderVectors.length === 0);
+const HEX_PIECE_CATALOG = [
+  piece("knight", "Hex Knight", "N", "Bent leaper: two edges plus one adjacent edge", HEX_MOVE_SETS.knight),
+  piece("king", "Hex King", "K", "Leaper: one edge step", HEX_MOVE_SETS.mann),
+  piece("wazir", "Edge Wazir", "W", "Leaper: one edge step", HEX_MOVE_SETS.edge),
+  piece("ferz", "Vertex Ferz", "F", "Leaper: across a shared vertex", HEX_MOVE_SETS.vertex),
+  piece("alfil", "Far Vertex", "A", "Leaper: two vertex steps", HEX_MOVE_SETS.alfil),
+  piece("dabbaba", "Double Edge", "D", "Leaper: two edge steps", HEX_MOVE_SETS.dabbaba),
+  piece("alibaba", "Hex Alibaba", "AD", "Far Vertex + Double Edge", HEX_MOVE_SETS.alibaba),
+  piece("camel", "Hex Camel", "C", "Bent leaper: three edges plus one adjacent edge", HEX_MOVE_SETS.camel),
+  piece("zebra", "Hex Zebra", "Z", "Bent leaper: three edges plus two adjacent edges", HEX_MOVE_SETS.zebra),
+  piece("giraffe", "Hex Giraffe", "G", "Bent leaper: four edges plus one adjacent edge", HEX_MOVE_SETS.giraffe),
+  piece("antelope", "Hex Antelope", "AN", "Bent leaper: four edges plus three adjacent edges", HEX_MOVE_SETS.antelope),
+  piece("gnu", "Hex Gnu", "GN", "Hex Knight + Hex Camel", mergeVectors(HEX_MOVE_SETS.knight, HEX_MOVE_SETS.camel)),
+  piece("bison", "Hex Bison", "BI", "Hex Camel + Hex Zebra", mergeVectors(HEX_MOVE_SETS.camel, HEX_MOVE_SETS.zebra)),
+  piece("buffalo", "Hex Buffalo", "BU", "Hex Knight + Hex Camel + Hex Zebra", mergeVectors(HEX_MOVE_SETS.knight, HEX_MOVE_SETS.camel, HEX_MOVE_SETS.zebra)),
+  piece("auroch", "Hex Auroch", "AU", "Hex Knight + Hex Giraffe", mergeVectors(HEX_MOVE_SETS.knight, HEX_MOVE_SETS.giraffe)),
+  piece("squirrel", "Hex Squirrel", "SQ", "Hex Knight + Far Vertex + Double Edge", HEX_MOVE_SETS.squirrel),
+  piece("centaur", "Hex Centaur", "KN", "Hex King + Hex Knight", mergeVectors(HEX_MOVE_SETS.mann, HEX_MOVE_SETS.knight)),
+  piece("champion", "Hex Champion", "WAD", "Edge Wazir + Far Vertex + Double Edge", mergeVectors(HEX_MOVE_SETS.edge, HEX_MOVE_SETS.alfil, HEX_MOVE_SETS.dabbaba)),
+  piece("wizard", "Hex Wizard", "FC", "Vertex Ferz + Hex Camel", mergeVectors(HEX_MOVE_SETS.vertex, HEX_MOVE_SETS.camel)),
+  piece("phoenix", "Hex Phoenix", "WA", "Edge Wazir + Far Vertex", mergeVectors(HEX_MOVE_SETS.edge, HEX_MOVE_SETS.alfil)),
+  piece("kirin", "Hex Kirin", "FD", "Vertex Ferz + Double Edge", mergeVectors(HEX_MOVE_SETS.vertex, HEX_MOVE_SETS.dabbaba)),
+  piece("war-machine", "Hex War Machine", "WD", "Edge Wazir + Double Edge", mergeVectors(HEX_MOVE_SETS.edge, HEX_MOVE_SETS.dabbaba)),
+  piece("modern-elephant", "Hex Elephant", "FA", "Vertex Ferz + Far Vertex", mergeVectors(HEX_MOVE_SETS.vertex, HEX_MOVE_SETS.alfil)),
+  piece("mastodon", "Hex Mastodon", "KAD", "Hex King + Far Vertex + Double Edge", mergeVectors(HEX_MOVE_SETS.mann, HEX_MOVE_SETS.alfil, HEX_MOVE_SETS.dabbaba)),
+  piece("carpenter", "Hex Carpenter", "ND", "Hex Knight + Double Edge", mergeVectors(HEX_MOVE_SETS.knight, HEX_MOVE_SETS.dabbaba)),
+  piece("emperor", "Hex Emperor", "WN", "Edge Wazir + Hex Knight", mergeVectors(HEX_MOVE_SETS.edge, HEX_MOVE_SETS.knight)),
+  piece("teutonic-knight", "Hex Teutonic Knight", "WNC", "Edge Wazir + Hex Knight + Hex Camel", mergeVectors(HEX_MOVE_SETS.edge, HEX_MOVE_SETS.knight, HEX_MOVE_SETS.camel)),
+  piece("sorcerer", "Hex Sorcerer", "WZ", "Edge Wazir + Hex Zebra", mergeVectors(HEX_MOVE_SETS.edge, HEX_MOVE_SETS.zebra)),
+];
+
+const PIECE_CATALOGS = {
+  [GRID_MODES.HEX]: HEX_PIECE_CATALOG,
+  [GRID_MODES.SQUARE]: SQUARE_PIECE_CATALOG,
+};
+const PIECE_MAPS_BY_MODE = Object.fromEntries(
+  Object.entries(PIECE_CATALOGS).map(([mode, catalog]) => [mode, new Map(catalog.map((pieceDefinition) => [pieceDefinition.id, pieceDefinition]))])
+);
 const simulationEngine = createSimulationEngine();
 
 const PLAYER_STYLES = [
@@ -214,6 +273,7 @@ const elements = {
   openPresetDrawer: document.querySelector("#openPresetDrawer"),
   clearQueue: document.querySelector("#clearQueue"),
   resetQueue: document.querySelector("#resetQueue"),
+  modeButtons: document.querySelectorAll("[data-board-mode]"),
   presetButtons: document.querySelectorAll("[data-steps]"),
 };
 
@@ -233,6 +293,7 @@ const state = {
   occupiedIndex: new Map(),
   panX: 0,
   panY: 0,
+  boardMode: GRID_MODES.SQUARE,
   playing: false,
   queue: DEFAULT_QUEUE.slice(),
   queueMessageTimer: 0,
@@ -300,6 +361,36 @@ function symmetricRiders(pairs, maxSteps = Infinity) {
   );
 }
 
+function hexDirections() {
+  return [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
+}
+
+function hexDirectionalLeapers(distance) {
+  return hexDirections().map(([dx, dy]) => [dx * distance, dy * distance]);
+}
+
+function hexVertexLeapers(distance) {
+  const directions = hexDirections();
+  return mergeVectors(
+    directions.map(([dx, dy], index) => {
+      const [nextDx, nextDy] = directions[(index + 1) % directions.length];
+      return [(dx + nextDx) * distance, (dy + nextDy) * distance];
+    })
+  );
+}
+
+function hexBentLeapers(shortDistance, longDistance) {
+  const directions = hexDirections();
+  const offsets = [];
+  for (let index = 0; index < directions.length; index += 1) {
+    const [dx, dy] = directions[index];
+    const [nextDx, nextDy] = directions[(index + 1) % directions.length];
+    offsets.push([dx * longDistance + nextDx * shortDistance, dy * longDistance + nextDy * shortDistance]);
+    offsets.push([dx * shortDistance + nextDx * longDistance, dy * shortDistance + nextDy * longDistance]);
+  }
+  return mergeVectors(offsets);
+}
+
 function uniquePairs(a, b) {
   return a === b ? [[a, b]] : [[a, b], [b, a]];
 }
@@ -341,7 +432,9 @@ function createSimulationEngine() {
   const DENSE_BOARD_MIN = -1500;
   const DENSE_BOARD_MAX = DENSE_BOARD_MIN + DENSE_BOARD_SIZE - 1;
   const DENSE_BOARD_CELLS = DENSE_BOARD_SIZE * DENSE_BOARD_SIZE;
-  const DENSE_MAX_INDEX = (2 * Math.max(Math.abs(DENSE_BOARD_MIN), Math.abs(DENSE_BOARD_MAX)) + 1) ** 2 - 1;
+  const DENSE_SQUARE_MAX_INDEX = (2 * Math.max(Math.abs(DENSE_BOARD_MIN), Math.abs(DENSE_BOARD_MAX)) + 1) ** 2 - 1;
+  const DENSE_HEX_MAX_RADIUS = Math.min(Math.abs(DENSE_BOARD_MIN), Math.abs(DENSE_BOARD_MAX));
+  const DENSE_HEX_MAX_INDEX = 1 + 3 * DENSE_HEX_MAX_RADIUS * (DENSE_HEX_MAX_RADIUS + 1) - 1;
   const DENSE_MAX_PLAYERS = 8;
   const INITIAL_CAPACITY = 1024;
   const SEQUENCE_LIMIT = 120;
@@ -382,6 +475,50 @@ function createSimulationEngine() {
           this.sidesAtLength = 0;
           this.sideLength += 1;
         }
+      }
+    }
+  }
+
+  class HexSpiralCursor {
+    constructor() {
+      this.x = 0;
+      this.y = 0;
+      this.index = -1;
+      this.ring = 0;
+      this.returnedInRing = 0;
+      this.directionIndex = 0;
+      this.stepInSide = 0;
+      this.directions = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+    }
+
+    next() {
+      if (this.index === -1) {
+        this.index = 0;
+        this.returnedInRing = 1;
+        return;
+      }
+
+      if (this.ring === 0 || this.returnedInRing >= this.ring * 6) {
+        this.ring += 1;
+        this.x = this.ring;
+        this.y = 0;
+        this.index += 1;
+        this.returnedInRing = 1;
+        this.directionIndex = 0;
+        this.stepInSide = 0;
+        return;
+      }
+
+      const direction = this.directions[this.directionIndex];
+      this.x += direction[0];
+      this.y += direction[1];
+      this.index += 1;
+      this.returnedInRing += 1;
+      this.stepInSide += 1;
+
+      if (this.stepInSide === this.ring) {
+        this.stepInSide = 0;
+        this.directionIndex = (this.directionIndex + 1) % this.directions.length;
       }
     }
   }
@@ -427,7 +564,9 @@ function createSimulationEngine() {
 
   class DenseLeaperGame {
     constructor(config) {
+      this.topology = denseTopologyForMode(config.boardMode);
       this.mode = "dense";
+      this.grid = this.topology.grid;
       this.players = config.players;
       this.activeCount = this.players.length;
       this.activeMask = (1 << this.activeCount) - 1;
@@ -494,13 +633,13 @@ function createSimulationEngine() {
       const attackMask = this.activeCount === 1 ? ownBit : this.activeMask & ~ownBit;
       let candidate = this.nextCandidates[playerIndex];
 
-      while (candidate <= DENSE_MAX_INDEX) {
-        spiralCoordInto(candidate, this.coordScratch);
+      while (candidate <= this.topology.maxIndex) {
+        this.topology.coordInto(candidate, this.coordScratch);
         const x = this.coordScratch[0];
         const y = this.coordScratch[1];
 
-        if (inDenseBoard(x, y)) {
-          const offset = denseBoardOffset(x, y);
+        if (this.topology.inBoard(x, y)) {
+          const offset = this.topology.offset(x, y);
           if (this.tileColors[offset] === 0 && (this.attacked[offset] & attackMask) === 0) {
             this.nextCandidates[playerIndex] = candidate + 1;
             return { index: candidate, offset, x, y };
@@ -509,7 +648,7 @@ function createSimulationEngine() {
         candidate += 1;
       }
 
-      this.nextCandidates[playerIndex] = DENSE_MAX_INDEX + 1;
+      this.nextCandidates[playerIndex] = this.topology.maxIndex + 1;
       this.exhausted[playerIndex] = 1;
       return null;
     }
@@ -524,8 +663,8 @@ function createSimulationEngine() {
       for (const [dx, dy] of this.movesByPlayer[playerIndex]) {
         const attackX = x + dx;
         const attackY = y + dy;
-        if (inDenseBoard(attackX, attackY)) {
-          this.attacked[denseBoardOffset(attackX, attackY)] |= colorBit;
+        if (this.topology.inBoard(attackX, attackY)) {
+          this.attacked[this.topology.offset(attackX, attackY)] |= colorBit;
         }
       }
 
@@ -546,6 +685,7 @@ function createSimulationEngine() {
         bounds: this.bounds(),
         completed: this.completed,
         counts: Array.from(this.counts),
+        grid: this.grid,
         mode: this.mode,
         players: this.players,
         recent: this.recent.slice(),
@@ -559,7 +699,8 @@ function createSimulationEngine() {
         ...this.placements.trim(),
         attacked: this.attacked,
         board: {
-          maxIndex: DENSE_MAX_INDEX,
+          grid: this.grid,
+          maxIndex: this.topology.maxIndex,
           maxX: DENSE_BOARD_MAX,
           maxY: DENSE_BOARD_MAX,
           minX: DENSE_BOARD_MIN,
@@ -581,8 +722,9 @@ function createSimulationEngine() {
   class SparseGame {
     constructor(config) {
       this.mode = "sparse";
+      this.grid = config.boardMode === "hex" ? "hex" : "square";
       this.players = config.players;
-      this.cursors = this.players.map(() => new SpiralCursor());
+      this.cursors = this.players.map(() => createCursor(this.grid));
       this.counts = new Uint32Array(this.players.length);
       this.leaperAttacked = this.players.map(() => new Set());
       this.occupied = new Map();
@@ -717,6 +859,7 @@ function createSimulationEngine() {
         bounds: this.bounds(),
         completed: this.completed,
         counts: Array.from(this.counts),
+        grid: this.grid,
         mode: this.mode,
         players: this.players,
         recent: this.recent.slice(),
@@ -778,6 +921,59 @@ function createSimulationEngine() {
     return (DENSE_BOARD_MAX - y) * DENSE_BOARD_SIZE + (x - DENSE_BOARD_MIN);
   }
 
+  function hexRingForIndex(index) {
+    if (index <= 0) {
+      return 0;
+    }
+    return Math.ceil((Math.sqrt(12 * index + 9) - 3) / 6);
+  }
+
+  function hexSpiralCoordInto(index, out) {
+    if (index === 0) {
+      out[0] = 0;
+      out[1] = 0;
+      return;
+    }
+
+    const ring = hexRingForIndex(index);
+    const start = 1 + 3 * (ring - 1) * ring;
+    const offset = index - start;
+    const side = Math.floor(offset / ring);
+    const step = offset % ring;
+    let x = ring;
+    let y = 0;
+
+    const directions = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+    for (let sideIndex = 0; sideIndex < side; sideIndex += 1) {
+      x += directions[sideIndex][0] * ring;
+      y += directions[sideIndex][1] * ring;
+    }
+    x += directions[side][0] * step;
+    y += directions[side][1] * step;
+    out[0] = x;
+    out[1] = y;
+  }
+
+  function denseTopologyForMode(mode) {
+    if (mode === "hex") {
+      return {
+        coordInto: hexSpiralCoordInto,
+        grid: "hex",
+        inBoard: inDenseBoard,
+        maxIndex: DENSE_HEX_MAX_INDEX,
+        offset: denseBoardOffset,
+      };
+    }
+
+    return {
+      coordInto: spiralCoordInto,
+      grid: "square",
+      inBoard: inDenseBoard,
+      maxIndex: DENSE_SQUARE_MAX_INDEX,
+      offset: denseBoardOffset,
+    };
+  }
+
   function insertSortedTerm(terms, value) {
     if (terms.length === SEQUENCE_LIMIT && value >= terms[terms.length - 1]) {
       return;
@@ -822,11 +1018,28 @@ function createSimulationEngine() {
     return canUseDense(config) ? new DenseLeaperGame(config) : new SparseGame(config);
   }
 
+  function createCursor(grid) {
+    return grid === "hex" ? new HexSpiralCursor() : new SpiralCursor();
+  }
+
   return { createGame, packCoord, unpackX, unpackY };
 }
 
-function pieceForId(pieceId) {
-  return PIECES_BY_ID.get(pieceId) || PIECES_BY_ID.get("knight");
+function catalogForMode(mode = state.boardMode) {
+  return PIECE_CATALOGS[mode] || PIECE_CATALOGS[GRID_MODES.SQUARE];
+}
+
+function pieceMapForMode(mode = state.boardMode) {
+  return PIECE_MAPS_BY_MODE[mode] || PIECE_MAPS_BY_MODE[GRID_MODES.SQUARE];
+}
+
+function pieceForId(pieceId, mode = state.boardMode) {
+  const piecesById = pieceMapForMode(mode);
+  return piecesById.get(pieceId) || piecesById.get("knight") || PIECE_MAPS_BY_MODE[GRID_MODES.SQUARE].get("knight");
+}
+
+function visiblePieceCatalog() {
+  return catalogForMode().filter((pieceDefinition) => pieceDefinition.riderVectors.length === 0);
 }
 
 function playerStyleAt(index) {
@@ -843,9 +1056,9 @@ function playerStyleAt(index) {
   };
 }
 
-function buildPlayersFromQueue(queue) {
+function buildPlayersFromQueue(queue, mode = state.boardMode) {
   return queue.map((pieceId, index) => {
-    const pieceDefinition = pieceForId(pieceId);
+    const pieceDefinition = pieceForId(pieceId, mode);
     return {
       ...playerStyleAt(index),
       leaperOffsets: pieceDefinition.leaperOffsets,
@@ -859,7 +1072,8 @@ function buildPlayersFromQueue(queue) {
 
 function buildSimulationConfig() {
   return {
-    players: buildPlayersFromQueue(state.queue),
+    boardMode: state.boardMode,
+    players: buildPlayersFromQueue(state.queue, state.boardMode),
     progressEvery: progressEveryForTarget(state.targetSteps),
     targetSteps: state.targetSteps,
   };
@@ -876,7 +1090,7 @@ function progressEveryForTarget(targetSteps) {
 }
 
 function renderPalette() {
-  elements.piecePalette.replaceChildren(...VISIBLE_PIECE_CATALOG.map((pieceDefinition) => createPaletteCard(pieceDefinition)));
+  elements.piecePalette.replaceChildren(...visiblePieceCatalog().map((pieceDefinition) => createPaletteCard(pieceDefinition)));
 }
 
 function createSvgIcon(iconName) {
@@ -1015,6 +1229,10 @@ function createPaletteCard(pieceDefinition) {
 }
 
 function createPieceDiagram(pieceDefinition) {
+  if (state.boardMode === GRID_MODES.HEX) {
+    return createHexPieceDiagram(pieceDefinition);
+  }
+
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   const size = 74;
   const center = size / 2;
@@ -1054,6 +1272,55 @@ function createPieceDiagram(pieceDefinition) {
   return svg;
 }
 
+function createHexPieceDiagram(pieceDefinition) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const size = 74;
+  const center = size / 2;
+  const maxDistance = Math.max(2, maxPieceDistance(pieceDefinition));
+  const scale = 24 / maxDistance;
+  svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+  svg.setAttribute("class", "piece-diagram");
+  svg.setAttribute("aria-hidden", "true");
+
+  for (let x = -maxDistance; x <= maxDistance; x += 1) {
+    for (let y = -maxDistance; y <= maxDistance; y += 1) {
+      if (hexDistance(x, y) > maxDistance) {
+        continue;
+      }
+      const point = axialToRawPixel(x, y);
+      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.setAttribute("points", hexSvgPoints(center + point.x * scale, center + point.y * scale, Math.max(2.5, scale * 0.92)));
+      polygon.setAttribute("class", "grid");
+      svg.append(polygon);
+    }
+  }
+
+  for (const [dx, dy] of pieceDefinition.leaperOffsets) {
+    const point = axialToRawPixel(dx, dy);
+    const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    dot.setAttribute("cx", String(center + point.x * scale));
+    dot.setAttribute("cy", String(center + point.y * scale));
+    dot.setAttribute("r", "2.9");
+    dot.setAttribute("class", "target");
+    svg.append(dot);
+  }
+
+  const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  centerDot.setAttribute("cx", String(center));
+  centerDot.setAttribute("cy", String(center));
+  centerDot.setAttribute("r", "4.2");
+  centerDot.setAttribute("class", "origin");
+  svg.append(centerDot);
+  return svg;
+}
+
+function hexSvgPoints(centerX, centerY, radius) {
+  return Array.from({ length: 6 }, (_, index) => {
+    const angle = Math.PI / 6 + index * (Math.PI / 3);
+    return `${centerX + Math.cos(angle) * radius},${centerY + Math.sin(angle) * radius}`;
+  }).join(" ");
+}
+
 function line(x1, y1, x2, y2, className) {
   const lineElement = document.createElementNS("http://www.w3.org/2000/svg", "line");
   lineElement.setAttribute("x1", String(x1));
@@ -1065,9 +1332,18 @@ function line(x1, y1, x2, y2, className) {
 }
 
 function maxPieceDistance(pieceDefinition) {
+  if (state.boardMode === GRID_MODES.HEX) {
+    const leaperMax = pieceDefinition.leaperOffsets.reduce((max, [dx, dy]) => Math.max(max, hexDistance(dx, dy)), 0);
+    return Math.min(5, Math.max(leaperMax, 2));
+  }
+
   const leaperMax = pieceDefinition.leaperOffsets.reduce((max, [dx, dy]) => Math.max(max, Math.abs(dx), Math.abs(dy)), 0);
   const riderMax = pieceDefinition.riderVectors.reduce((max, vector) => Math.max(max, Math.abs(vector.dx), Math.abs(vector.dy)), 0);
   return Math.min(4, Math.max(leaperMax, riderMax, 2));
+}
+
+function hexDistance(x, y) {
+  return Math.max(Math.abs(x), Math.abs(y), Math.abs(x + y));
 }
 
 function renderQueue() {
@@ -1315,6 +1591,31 @@ function enforceTargetLimitForQueue() {
 
   state.targetSteps = capped;
   syncTargetInputs(capped);
+}
+
+function setBoardMode(mode) {
+  if (!Object.values(GRID_MODES).includes(mode) || mode === state.boardMode) {
+    return;
+  }
+  cancelActiveRun();
+  state.boardMode = mode;
+  state.activeResult = null;
+  state.tileIndexReady = false;
+  state.tileIndex = new Map();
+  state.occupiedIndex = new Map();
+  resetView(false);
+  syncBoardModeControls();
+  renderPalette();
+  renderQueue();
+  scheduleSimulation(0);
+}
+
+function syncBoardModeControls() {
+  elements.modeButtons.forEach((button) => {
+    const isActive = button.dataset.boardMode === state.boardMode;
+    button.setAttribute("aria-pressed", String(isActive));
+  });
+  document.body.dataset.activeBoardMode = state.boardMode;
 }
 
 function updatePresetButtons() {
@@ -1582,6 +1883,7 @@ function startSimulation() {
     bounds: { maxX: 4, maxY: 4, minX: -4, minY: -4 },
     completed: 0,
     counts: state.queue.map(() => 0),
+    grid: state.boardMode,
     players: buildPlayersFromQueue(state.queue),
     recent: [],
     sequenceTerms: state.queue.map(() => []),
@@ -1690,6 +1992,9 @@ function handleWorkerMessage(runId, config, message) {
       state.indexProgress = 100;
       prepareDensePreview(message.result);
     } else {
+      if (isHexResult(message.result)) {
+        prepareHexPreview(message.result);
+      }
       startTileIndexBuild(message.result);
     }
     updatePanels();
@@ -1735,6 +2040,9 @@ function startFallbackRun(runId, config) {
       state.indexProgress = 100;
       prepareDensePreview(state.activeResult);
     } else {
+      if (isHexResult(state.activeResult)) {
+        prepareHexPreview(state.activeResult);
+      }
       startTileIndexBuild(state.activeResult);
     }
     updatePanels();
@@ -1761,6 +2069,7 @@ function emptySnapshot() {
     bounds: { maxX: 4, maxY: 4, minX: -4, minY: -4 },
     completed: 0,
     counts: [],
+    grid: state.boardMode,
     players: [],
     recent: [],
     sequenceTerms: [],
@@ -1930,9 +2239,17 @@ function isDenseResult(result) {
   return Boolean(result?.mode === "dense" && result.board && result.tileColors);
 }
 
+function isHexResult(result) {
+  return Boolean(result?.grid === GRID_MODES.HEX && result.xs && result.ys && result.playerIds);
+}
+
 function prepareDensePreview(result) {
   if (!isDenseResult(result) || result.previewCanvas) {
     return result?.previewCanvas || null;
+  }
+
+  if (result.grid === GRID_MODES.HEX) {
+    return prepareDenseHexPreview(result);
   }
 
   const { board } = result;
@@ -1961,6 +2278,87 @@ function prepareDensePreview(result) {
   previewCtx.putImageData(imageData, 0, 0);
   result.previewCanvas = preview;
   result.previewPalette = palette;
+  return preview;
+}
+
+function prepareDenseHexPreview(result) {
+  const rawBounds = hexPixelBounds(result.bounds);
+  const rawWidth = Math.max(1, rawBounds.maxX - rawBounds.minX);
+  const rawHeight = Math.max(1, rawBounds.maxY - rawBounds.minY);
+  const rawArea = rawWidth * rawHeight;
+  const scale = clamp(Math.sqrt(HEX_PREVIEW_MAX_PIXELS / rawArea), 1, 2);
+  const preview = document.createElement("canvas");
+  preview.width = Math.max(1, Math.ceil(rawWidth * scale));
+  preview.height = Math.max(1, Math.ceil(rawHeight * scale));
+  const previewCtx = preview.getContext("2d", { alpha: false });
+  const palette = result.players.map((player) => cssColorToRgb(player.color));
+
+  previewCtx.fillStyle = "#ffffff";
+  previewCtx.fillRect(0, 0, preview.width, preview.height);
+
+  const dotSize = scale < 1.35 ? 2 : Math.ceil(scale * 1.4);
+  const dotOffset = dotSize / 2;
+  for (let colorIndex = 0; colorIndex < result.players.length; colorIndex += 1) {
+    const rgb = palette[colorIndex];
+    if (!rgb) {
+      continue;
+    }
+    previewCtx.fillStyle = `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`;
+    for (let index = 0; index < result.xs.length; index += 1) {
+      if (result.playerIds[index] !== colorIndex) {
+        continue;
+      }
+      const point = axialToRawPixel(result.xs[index], result.ys[index]);
+      const x = Math.round((point.x - rawBounds.minX) * scale - dotOffset);
+      const y = Math.round((point.y - rawBounds.minY) * scale - dotOffset);
+      previewCtx.fillRect(x, y, dotSize, dotSize);
+    }
+  }
+
+  result.previewCanvas = preview;
+  result.previewBounds = rawBounds;
+  result.previewScale = scale;
+  return preview;
+}
+
+function prepareHexPreview(result) {
+  if (!isHexResult(result) || result.hexPreviewCanvas) {
+    return result?.hexPreviewCanvas || null;
+  }
+
+  const rawBounds = hexPixelBounds(result.bounds);
+  const rawWidth = Math.max(1, rawBounds.maxX - rawBounds.minX);
+  const rawHeight = Math.max(1, rawBounds.maxY - rawBounds.minY);
+  const rawArea = rawWidth * rawHeight;
+  const scale = clamp(Math.sqrt(HEX_PREVIEW_MAX_PIXELS / rawArea), 1, 2);
+  const preview = document.createElement("canvas");
+  preview.width = Math.max(1, Math.ceil(rawWidth * scale));
+  preview.height = Math.max(1, Math.ceil(rawHeight * scale));
+  const previewCtx = preview.getContext("2d", { alpha: false });
+  const palette = result.players.map((player) => cssColorToRgb(player.color));
+
+  previewCtx.fillStyle = "#ffffff";
+  previewCtx.fillRect(0, 0, preview.width, preview.height);
+
+  const dotSize = scale < 1.35 ? 2 : Math.ceil(scale * 1.4);
+  const dotOffset = dotSize / 2;
+  for (let playerIndex = 0; playerIndex < result.players.length; playerIndex += 1) {
+    const rgb = palette[playerIndex];
+    previewCtx.fillStyle = `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`;
+    for (let index = 0; index < result.xs.length; index += 1) {
+      if (result.playerIds[index] !== playerIndex) {
+        continue;
+      }
+      const point = axialToRawPixel(result.xs[index], result.ys[index]);
+      const x = Math.round((point.x - rawBounds.minX) * scale - dotOffset);
+      const y = Math.round((point.y - rawBounds.minY) * scale - dotOffset);
+      previewCtx.fillRect(x, y, dotSize, dotSize);
+    }
+  }
+
+  result.hexPreviewCanvas = preview;
+  result.hexPreviewBounds = rawBounds;
+  result.hexPreviewScale = scale;
   return preview;
 }
 
@@ -1999,6 +2397,11 @@ function drawBoard() {
     return;
   }
 
+  if (layout.grid === GRID_MODES.HEX) {
+    drawHexBoard(snapshot, state.activeResult, layout);
+    return;
+  }
+
   drawGrid(bounds, originX, originY, cellSize);
 
   if (elements.showSpiral.checked) {
@@ -2019,6 +2422,11 @@ function drawBoard() {
 }
 
 function boardLayout(snapshot) {
+  const grid = snapshot.grid || state.boardMode;
+  if (grid === GRID_MODES.HEX) {
+    return hexBoardLayout(snapshot);
+  }
+
   const rect = elements.board.getBoundingClientRect();
   const width = rect.width;
   const height = rect.height;
@@ -2037,9 +2445,39 @@ function boardLayout(snapshot) {
     cellSize,
     fitOriginX,
     fitOriginY,
+    grid: GRID_MODES.SQUARE,
     height,
     originX: fitOriginX + state.panX,
     originY: fitOriginY + state.panY,
+    width,
+  };
+}
+
+function hexBoardLayout(snapshot) {
+  const rect = elements.board.getBoundingClientRect();
+  const width = rect.width;
+  const height = rect.height;
+  const bounds = paddedBounds(snapshot.bounds);
+  const rawBounds = hexPixelBounds(bounds);
+  const rawWidth = Math.max(1, rawBounds.maxX - rawBounds.minX);
+  const rawHeight = Math.max(1, rawBounds.maxY - rawBounds.minY);
+  const baseCellSize = Math.min(Math.max(20, width - 44) / rawWidth, Math.max(20, height - 44) / rawHeight);
+  const cellSize = Math.max(MIN_CELL_SIZE, baseCellSize * state.zoom);
+  const boardWidth = rawWidth * cellSize;
+  const boardHeight = rawHeight * cellSize;
+  const fitOriginX = (width - boardWidth) / 2 - rawBounds.minX * cellSize;
+  const fitOriginY = (height - boardHeight) / 2 - rawBounds.minY * cellSize;
+
+  return {
+    bounds,
+    cellSize,
+    fitOriginX,
+    fitOriginY,
+    grid: GRID_MODES.HEX,
+    height,
+    originX: fitOriginX + state.panX,
+    originY: fitOriginY + state.panY,
+    rawBounds,
     width,
   };
 }
@@ -2055,6 +2493,11 @@ function paddedBounds(bounds) {
 }
 
 function drawGrid(bounds, originX, originY, cellSize, fillBoard = true) {
+  if (activeBoardMode() === GRID_MODES.HEX) {
+    drawHexGrid(bounds, originX, originY, cellSize, fillBoard);
+    return;
+  }
+
   const cols = bounds.maxX - bounds.minX + 1;
   const rows = bounds.maxY - bounds.minY + 1;
   if (fillBoard) {
@@ -2082,29 +2525,164 @@ function drawGrid(bounds, originX, originY, cellSize, fillBoard = true) {
   ctx.stroke();
 }
 
+function drawHexBoard(snapshot, result, layout) {
+  const { bounds, originX, originY, cellSize, width, height } = layout;
+  const usePreview = shouldDrawHexPreview(result, cellSize);
+  if (usePreview) {
+    fillHexBoardBackground(bounds, originX, originY, cellSize);
+    drawHexPatternBitmap(result, originX, originY, cellSize);
+  } else {
+    drawGrid(bounds, originX, originY, cellSize);
+  }
+
+  if (elements.showSpiral.checked && !usePreview) {
+    drawSpiral(snapshot, bounds, originX, originY, cellSize);
+  }
+
+  if (elements.showAttacks.checked && result && state.tileIndexReady && !usePreview) {
+    drawAttackOverlay(result, bounds, originX, originY, cellSize, visibleWorldBounds(bounds, originX, originY, cellSize, width, height));
+  }
+
+  if (result && !usePreview) {
+    drawPieces(result, bounds, originX, originY, cellSize, width, height);
+  }
+
+  if (elements.showIndexes.checked && cellSize >= 16 && result) {
+    drawIndexes(result, bounds, originX, originY, cellSize, width, height);
+  }
+}
+
+function shouldDrawHexPreview(result, cellSize) {
+  return Boolean(isHexResult(result) && cellSize < HEX_DETAIL_CELL_SIZE);
+}
+
+function drawHexPatternBitmap(result, originX, originY, cellSize) {
+  const preview = prepareHexPreview(result);
+  if (!preview) {
+    return;
+  }
+
+  const rawBounds = result.hexPreviewBounds;
+  const destX = originX + rawBounds.minX * cellSize;
+  const destY = originY + rawBounds.minY * cellSize;
+  const destWidth = (rawBounds.maxX - rawBounds.minX) * cellSize;
+  const destHeight = (rawBounds.maxY - rawBounds.minY) * cellSize;
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(preview, destX, destY, destWidth, destHeight);
+  ctx.imageSmoothingEnabled = false;
+}
+
+function drawHexGrid(bounds, originX, originY, cellSize, fillBoard = true) {
+  if (fillBoard) {
+    fillHexBoardBackground(bounds, originX, originY, cellSize);
+  }
+
+  if (cellSize < 5) {
+    return;
+  }
+
+  const rect = elements.board.getBoundingClientRect();
+  const visible = visibleWorldBounds(bounds, originX, originY, cellSize, rect.width, rect.height);
+  const minX = Math.max(bounds.minX, visible.minX);
+  const maxX = Math.min(bounds.maxX, visible.maxX);
+  const minY = Math.max(bounds.minY, visible.minY);
+  const maxY = Math.min(bounds.maxY, visible.maxY);
+  if ((maxX - minX + 1) * (maxY - minY + 1) > 12000) {
+    return;
+  }
+
+  ctx.strokeStyle = "#dce4ea";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = minX; x <= maxX; x += 1) {
+    for (let y = minY; y <= maxY; y += 1) {
+      traceHexCell(x, y, originX, originY, cellSize, Math.max(0.5, cellSize - 0.5));
+    }
+  }
+  ctx.stroke();
+}
+
+function fillHexBoardBackground(bounds, originX, originY, cellSize) {
+  const rawBounds = hexPixelBounds(bounds);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(
+    originX + rawBounds.minX * cellSize,
+    originY + rawBounds.minY * cellSize,
+    (rawBounds.maxX - rawBounds.minX) * cellSize,
+    (rawBounds.maxY - rawBounds.minY) * cellSize
+  );
+}
+
 function drawDenseBoard(result, bounds, originX, originY, cellSize, width, height) {
   const cols = bounds.maxX - bounds.minX + 1;
   const rows = bounds.maxY - bounds.minY + 1;
+  const useRasterOnly = shouldUseDenseRasterOnly(result, cellSize);
   ctx.fillStyle = "#ffffff";
-  ctx.fillRect(originX, originY, cols * cellSize, rows * cellSize);
-  drawDensePatternBitmap(result, bounds, originX, originY, cellSize, width, height);
+  if (result.grid === GRID_MODES.HEX) {
+    fillHexBoardBackground(bounds, originX, originY, cellSize);
+  } else {
+    ctx.fillRect(originX, originY, cols * cellSize, rows * cellSize);
+  }
 
   const visible = visibleWorldBounds(bounds, originX, originY, cellSize, width, height);
-  if (elements.showAttacks.checked) {
+  if (result.grid === GRID_MODES.HEX && !useRasterOnly) {
+    drawDenseHexCells(result, bounds, originX, originY, cellSize, visible);
+  } else {
+    drawDensePatternBitmap(result, bounds, originX, originY, cellSize, width, height);
+  }
+
+  if (elements.showAttacks.checked && !useRasterOnly) {
     drawDenseAttackOverlay(result, bounds, originX, originY, cellSize, visible);
   }
-  if (elements.showSpiral.checked) {
+  if (elements.showSpiral.checked && !useRasterOnly) {
     drawDenseTrace(result, bounds, originX, originY, cellSize, visible);
   }
-  drawGrid(bounds, originX, originY, cellSize, false);
+  if (!useRasterOnly) {
+    drawGrid(bounds, originX, originY, cellSize, false);
+  }
   if (elements.showIndexes.checked && cellSize >= 18) {
     drawDenseIndexes(result, bounds, originX, originY, cellSize, visible);
+  }
+}
+
+function shouldUseDenseRasterOnly(result, cellSize) {
+  return result.grid === GRID_MODES.HEX && cellSize < HEX_DETAIL_CELL_SIZE;
+}
+
+function drawDenseHexCells(result, bounds, originX, originY, cellSize, visible) {
+  const view = clampDenseView(result.board, visible);
+  if (!view || (view.maxX - view.minX + 1) * (view.maxY - view.minY + 1) > 50000) {
+    return;
+  }
+
+  for (let y = view.minY; y <= view.maxY; y += 1) {
+    for (let x = view.minX; x <= view.maxX; x += 1) {
+      const value = result.tileColors[denseResultOffset(result.board, x, y)];
+      if (!value) {
+        continue;
+      }
+      ctx.fillStyle = result.players[value - 1]?.color || "#1c2733";
+      fillHexCell(x, y, originX, originY, cellSize, cellSize < 5 ? 0 : Math.max(0.8, cellSize * 0.08));
+    }
   }
 }
 
 function drawDensePatternBitmap(result, bounds, originX, originY, cellSize, width, height) {
   const preview = prepareDensePreview(result);
   if (!preview) {
+    return;
+  }
+
+  if (result.grid === GRID_MODES.HEX) {
+    const rawBounds = result.previewBounds;
+    const destX = originX + rawBounds.minX * cellSize;
+    const destY = originY + rawBounds.minY * cellSize;
+    const destWidth = (rawBounds.maxX - rawBounds.minX) * cellSize;
+    const destHeight = (rawBounds.maxY - rawBounds.minY) * cellSize;
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(preview, destX, destY, destWidth, destHeight);
     return;
   }
 
@@ -2148,8 +2726,12 @@ function drawDenseAttackOverlay(result, bounds, originX, originY, cellSize, visi
       }
       const playerIndex = firstBitIndex(result.attacked[offset]);
       ctx.fillStyle = result.players[playerIndex]?.attackColor || "rgba(34, 116, 165, 0.08)";
-      const [left, top] = cellCorner(x, y, bounds, originX, originY, cellSize);
-      ctx.fillRect(left + 1, top + 1, Math.max(1, cellSize - 2), Math.max(1, cellSize - 2));
+      if (result.grid === GRID_MODES.HEX) {
+        fillHexCell(x, y, originX, originY, cellSize, Math.max(1, cellSize * 0.12));
+      } else {
+        const [left, top] = cellCorner(x, y, bounds, originX, originY, cellSize);
+        ctx.fillRect(left + 1, top + 1, Math.max(1, cellSize - 2), Math.max(1, cellSize - 2));
+      }
     }
   }
 }
@@ -2172,11 +2754,11 @@ function drawDenseTrace(result, bounds, originX, originY, cellSize, visible) {
 
   for (let y = view.minY; y <= view.maxY; y += 1) {
     for (let x = view.minX; x <= view.maxX; x += 1) {
-      const index = spiralIndexForCoord(x, y);
+      const index = denseSpiralIndexForCoord(result.grid, x, y);
       if (index >= result.board.maxIndex) {
         continue;
       }
-      const next = spiralCoord(index + 1);
+      const next = denseSpiralCoord(result.grid, index + 1);
       if (!inDenseResultBoard(result.board, next.x, next.y)) {
         continue;
       }
@@ -2196,8 +2778,7 @@ function drawDenseIndexes(result, bounds, originX, originY, cellSize, visible) {
     return;
   }
 
-  const maxRing = Math.max(Math.abs(view.minX), Math.abs(view.maxX), Math.abs(view.minY), Math.abs(view.maxY));
-  const largestVisibleLabel = (2 * maxRing + 1) * (2 * maxRing + 1) - 1;
+  const largestVisibleLabel = largestDenseVisibleIndex(result.grid, view);
   const fontSize = clamp(Math.floor(cellSize * 0.28), 9, 18);
   ctx.font = `${fontSize}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
   if (ctx.measureText(String(largestVisibleLabel)).width > cellSize * 0.72) {
@@ -2212,7 +2793,7 @@ function drawDenseIndexes(result, bounds, originX, originY, cellSize, visible) {
       const value = result.tileColors[offset];
       const [centerX, centerY] = cellCenter(x, y, bounds, originX, originY, cellSize);
       ctx.fillStyle = value ? "#ffffff" : "#607080";
-      ctx.fillText(String(spiralIndexForCoord(x, y)), centerX, centerY + 0.5);
+      ctx.fillText(String(denseSpiralIndexForCoord(result.grid, x, y)), centerX, centerY + 0.5);
     }
   }
 }
@@ -2223,7 +2804,7 @@ function drawSpiral(snapshot, bounds, originX, originY, cellSize) {
     return;
   }
 
-  const cursor = new SpiralPreviewCursor();
+  const cursor = activeBoardMode(snapshot) === GRID_MODES.HEX ? new HexSpiralPreviewCursor() : new SpiralPreviewCursor();
   ctx.strokeStyle = "rgba(34, 116, 165, 0.32)";
   ctx.lineWidth = Math.max(1, Math.min(3, cellSize * 0.08));
   ctx.beginPath();
@@ -2282,6 +2863,47 @@ class SpiralPreviewCursor {
   }
 }
 
+class HexSpiralPreviewCursor {
+  constructor() {
+    this.x = 0;
+    this.y = 0;
+    this.index = -1;
+    this.ring = 0;
+    this.returnedInRing = 0;
+    this.directionIndex = 0;
+    this.stepInSide = 0;
+    this.directions = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+  }
+
+  next() {
+    if (this.index === -1) {
+      this.index = 0;
+      this.returnedInRing = 1;
+      return;
+    }
+    if (this.ring === 0 || this.returnedInRing >= this.ring * 6) {
+      this.ring += 1;
+      this.x = this.ring;
+      this.y = 0;
+      this.index += 1;
+      this.returnedInRing = 1;
+      this.directionIndex = 0;
+      this.stepInSide = 0;
+      return;
+    }
+    const direction = this.directions[this.directionIndex];
+    this.x += direction[0];
+    this.y += direction[1];
+    this.index += 1;
+    this.returnedInRing += 1;
+    this.stepInSide += 1;
+    if (this.stepInSide === this.ring) {
+      this.stepInSide = 0;
+      this.directionIndex = (this.directionIndex + 1) % this.directions.length;
+    }
+  }
+}
+
 function drawPieces(result, bounds, originX, originY, cellSize, width, height) {
   const visible = visibleWorldBounds(bounds, originX, originY, cellSize, width, height);
   const indices = visiblePlacementIndices(result, visible);
@@ -2307,6 +2929,20 @@ function drawPieceAt(result, index, bounds, originX, originY, cellSize) {
   const playerIndex = result.playerIds[index];
   const definition = result.players[playerIndex];
   const [x, y] = cellCenter(result.xs[index], result.ys[index], bounds, originX, originY, cellSize);
+
+  if (activeBoardMode(result) === GRID_MODES.HEX) {
+    ctx.fillStyle = definition.color;
+    fillHexCell(result.xs[index], result.ys[index], originX, originY, cellSize, cellSize < 5 ? 0 : Math.max(0.8, cellSize * 0.08));
+    if (cellSize >= 16) {
+      const symbolSize = Math.max(7, Math.min(cellSize * 0.34, (cellSize * 0.72) / definition.symbol.length));
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `700 ${symbolSize}px ui-sans-serif, system-ui`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(definition.symbol, x, y + 0.5);
+    }
+    return;
+  }
 
   if (cellSize < 4) {
     const [left, top] = cellCorner(result.xs[index], result.ys[index], bounds, originX, originY, cellSize);
@@ -2391,6 +3027,10 @@ function fillAttackCell(x, y, bounds, originX, originY, cellSize, visible) {
   if (!inBounds({ x, y }, visible) || state.occupiedIndex.has(simulationEngine.packCoord(x, y))) {
     return;
   }
+  if (activeBoardMode() === GRID_MODES.HEX) {
+    fillHexCell(x, y, originX, originY, cellSize, Math.max(1, cellSize * 0.12));
+    return;
+  }
   const [left, top] = cellCorner(x, y, bounds, originX, originY, cellSize);
   ctx.fillRect(left + 1, top + 1, Math.max(1, cellSize - 2), Math.max(1, cellSize - 2));
 }
@@ -2405,11 +3045,30 @@ function pastVisibleBounds(x, y, dx, dy, visible) {
 }
 
 function visibleWorldBounds(bounds, originX, originY, cellSize, width, height) {
+  if (activeBoardMode() === GRID_MODES.HEX) {
+    return visibleHexWorldBounds(bounds, originX, originY, cellSize, width, height);
+  }
+
   return {
     maxX: Math.ceil((width - originX) / cellSize + bounds.minX) + 2,
     maxY: Math.ceil(bounds.maxY - (0 - originY) / cellSize) + 2,
     minX: Math.floor((0 - originX) / cellSize + bounds.minX) - 2,
     minY: Math.floor(bounds.maxY - (height - originY) / cellSize) - 2,
+  };
+}
+
+function visibleHexWorldBounds(bounds, originX, originY, cellSize, width, height) {
+  const points = [
+    screenToAxial(0, 0, originX, originY, cellSize),
+    screenToAxial(width, 0, originX, originY, cellSize),
+    screenToAxial(0, height, originX, originY, cellSize),
+    screenToAxial(width, height, originX, originY, cellSize),
+  ];
+  return {
+    maxX: Math.min(bounds.maxX, Math.ceil(Math.max(...points.map((point) => point.x))) + 3),
+    maxY: Math.min(bounds.maxY, Math.ceil(Math.max(...points.map((point) => point.y))) + 3),
+    minX: Math.max(bounds.minX, Math.floor(Math.min(...points.map((point) => point.x))) - 3),
+    minY: Math.max(bounds.minY, Math.floor(Math.min(...points.map((point) => point.y))) - 3),
   };
 }
 
@@ -2420,12 +3079,72 @@ function cellCorner(x, y, bounds, originX, originY, cellSize) {
 }
 
 function cellCenter(x, y, bounds, originX, originY, cellSize) {
+  if (activeBoardMode() === GRID_MODES.HEX) {
+    const point = axialToRawPixel(x, y);
+    return [originX + point.x * cellSize, originY + point.y * cellSize];
+  }
+
   const [left, top] = cellCorner(x, y, bounds, originX, originY, cellSize);
   return [left + cellSize / 2, top + cellSize / 2];
 }
 
 function inBounds(cell, bounds) {
   return cell.x >= bounds.minX && cell.x <= bounds.maxX && cell.y >= bounds.minY && cell.y <= bounds.maxY;
+}
+
+function activeBoardMode(snapshot = state.activeSnapshot) {
+  return snapshot?.grid || state.boardMode;
+}
+
+function axialToRawPixel(x, y) {
+  return {
+    x: SQRT3 * (x + y / 2),
+    y: -1.5 * y,
+  };
+}
+
+function screenToAxial(screenX, screenY, originX, originY, cellSize) {
+  const rawX = (screenX - originX) / cellSize;
+  const rawY = (screenY - originY) / cellSize;
+  const y = -rawY * (2 / 3);
+  const x = rawX / SQRT3 - y / 2;
+  return { x, y };
+}
+
+function hexPixelBounds(bounds) {
+  const corners = [
+    axialToRawPixel(bounds.minX, bounds.minY),
+    axialToRawPixel(bounds.minX, bounds.maxY),
+    axialToRawPixel(bounds.maxX, bounds.minY),
+    axialToRawPixel(bounds.maxX, bounds.maxY),
+  ];
+  return {
+    maxX: Math.max(...corners.map((point) => point.x)) + SQRT3 / 2,
+    maxY: Math.max(...corners.map((point) => point.y)) + 1,
+    minX: Math.min(...corners.map((point) => point.x)) - SQRT3 / 2,
+    minY: Math.min(...corners.map((point) => point.y)) - 1,
+  };
+}
+
+function traceHexCell(x, y, originX, originY, cellSize, radius) {
+  const [centerX, centerY] = cellCenter(x, y, null, originX, originY, cellSize);
+  for (let index = 0; index < 6; index += 1) {
+    const angle = Math.PI / 6 + index * (Math.PI / 3);
+    const pointX = centerX + Math.cos(angle) * radius;
+    const pointY = centerY + Math.sin(angle) * radius;
+    if (index === 0) {
+      ctx.moveTo(pointX, pointY);
+    } else {
+      ctx.lineTo(pointX, pointY);
+    }
+  }
+  ctx.closePath();
+}
+
+function fillHexCell(x, y, originX, originY, cellSize, inset = 0) {
+  ctx.beginPath();
+  traceHexCell(x, y, originX, originY, cellSize, Math.max(0.5, cellSize - inset));
+  ctx.fill();
 }
 
 function clampDenseView(board, view) {
@@ -2477,6 +3196,36 @@ function spiralCoord(index) {
   return { x: -ring + 1 + (offset - 3 * side), y: -ring };
 }
 
+function hexRingForSpiralIndex(index) {
+  if (index <= 0) {
+    return 0;
+  }
+  return Math.ceil((Math.sqrt(12 * index + 9) - 3) / 6);
+}
+
+function hexSpiralCoord(index) {
+  if (index === 0) {
+    return { x: 0, y: 0 };
+  }
+
+  const ring = hexRingForSpiralIndex(index);
+  const start = 1 + 3 * (ring - 1) * ring;
+  const offset = index - start;
+  const side = Math.floor(offset / ring);
+  const step = offset % ring;
+  const directions = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+  let x = ring;
+  let y = 0;
+  for (let sideIndex = 0; sideIndex < side; sideIndex += 1) {
+    x += directions[sideIndex][0] * ring;
+    y += directions[sideIndex][1] * ring;
+  }
+  return {
+    x: x + directions[side][0] * step,
+    y: y + directions[side][1] * step,
+  };
+}
+
 function spiralIndexForCoord(x, y) {
   if (x === 0 && y === 0) {
     return 0;
@@ -2496,6 +3245,75 @@ function spiralIndexForCoord(x, y) {
     return start + 2 * side + (ring - 1 - y);
   }
   return start + 3 * side + (x + ring - 1);
+}
+
+function hexSpiralIndexForCoord(x, y) {
+  const ring = hexDistance(x, y);
+  if (ring === 0) {
+    return 0;
+  }
+
+  const startIndex = 1 + 3 * (ring - 1) * ring;
+  const directions = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]];
+  let sideStartX = ring;
+  let sideStartY = 0;
+
+  for (let side = 0; side < directions.length; side += 1) {
+    const [dx, dy] = directions[side];
+    const step = stepAlongHexSide(x, y, sideStartX, sideStartY, dx, dy);
+    if (step >= 0 && step < ring) {
+      return startIndex + side * ring + step;
+    }
+    sideStartX += dx * ring;
+    sideStartY += dy * ring;
+  }
+
+  return startIndex;
+}
+
+function stepAlongHexSide(x, y, startX, startY, dx, dy) {
+  let step = 0;
+  if (dx === 0) {
+    if (x !== startX || dy === 0) {
+      return -1;
+    }
+    step = (y - startY) / dy;
+  } else if (dy === 0) {
+    if (y !== startY) {
+      return -1;
+    }
+    step = (x - startX) / dx;
+  } else {
+    const stepX = (x - startX) / dx;
+    const stepY = (y - startY) / dy;
+    if (stepX !== stepY) {
+      return -1;
+    }
+    step = stepX;
+  }
+  return Number.isInteger(step) ? step : -1;
+}
+
+function denseSpiralCoord(grid, index) {
+  return grid === GRID_MODES.HEX ? hexSpiralCoord(index) : spiralCoord(index);
+}
+
+function denseSpiralIndexForCoord(grid, x, y) {
+  return grid === GRID_MODES.HEX ? hexSpiralIndexForCoord(x, y) : spiralIndexForCoord(x, y);
+}
+
+function largestDenseVisibleIndex(grid, view) {
+  if (grid !== GRID_MODES.HEX) {
+    const maxRing = Math.max(Math.abs(view.minX), Math.abs(view.maxX), Math.abs(view.minY), Math.abs(view.maxY));
+    return (2 * maxRing + 1) * (2 * maxRing + 1) - 1;
+  }
+
+  return Math.max(
+    hexSpiralIndexForCoord(view.minX, view.minY),
+    hexSpiralIndexForCoord(view.minX, view.maxY),
+    hexSpiralIndexForCoord(view.maxX, view.minY),
+    hexSpiralIndexForCoord(view.maxX, view.maxY)
+  );
 }
 
 function clamp(value, min, max) {
@@ -2539,11 +3357,13 @@ function panBy(dx, dy, shouldUpdate = true) {
   }
 }
 
-function resetView() {
+function resetView(shouldDraw = true) {
   state.zoom = 1;
   state.panX = 0;
   state.panY = 0;
-  drawBoard();
+  if (shouldDraw) {
+    drawBoard();
+  }
 }
 
 function pointerGesture() {
@@ -2597,7 +3417,8 @@ function togglePlayback() {
 
 function validateAgainstOeisPrefix() {
   const config = {
-    players: buildPlayersFromQueue(["knight", "knight"]),
+    boardMode: GRID_MODES.SQUARE,
+    players: buildPlayersFromQueue(["knight", "knight"], GRID_MODES.SQUARE),
     progressEvery: 1000,
     targetSteps: 160,
   };
@@ -2624,6 +3445,9 @@ elements.speedRange.addEventListener("input", () => {
 });
 elements.presetButtons.forEach((button) => {
   button.addEventListener("click", () => setTargetSteps(Number(button.dataset.steps)));
+});
+elements.modeButtons.forEach((button) => {
+  button.addEventListener("click", () => setBoardMode(button.dataset.boardMode));
 });
 elements.openPieceDrawer.addEventListener("click", () => {
   dismissPieceHint();
@@ -2744,6 +3568,7 @@ renderPalette();
 renderPresets();
 renderQueue();
 updatePresetButtons();
+syncBoardModeControls();
 setControlSheetExpanded(true);
 validateAgainstOeisPrefix();
 window.setTimeout(showPieceHint, 450);

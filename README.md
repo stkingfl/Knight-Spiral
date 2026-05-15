@@ -15,8 +15,12 @@ zoom. Type any nonnegative placement count into the number field; the slider
 expands when you go past its current range, so large runs such as 2,000,000
 placements are entered directly.
 
-The browser app has a fairy-piece palette using supported leapers and riders
-from Wikipedia's list at `https://en.wikipedia.org/wiki/List_of_fairy_chess_pieces`.
+The browser app has square and hex grid modes. Square mode uses the familiar
+fairy chess leapers and riders from Wikipedia's list at
+`https://en.wikipedia.org/wiki/List_of_fairy_chess_pieces`; hex mode keeps the
+same queue ids but interprets them as axial-hex pieces, with edge, vertex, and
+bent jumps redesigned for a six-neighbor grid.
+
 Drag palette cards into the cycle queue, use the add button, reorder queued
 cards, or remove cards. The queue is the player list: 2-5 cards are required,
 duplicates are allowed, and order matters. The default queue is `Knight,

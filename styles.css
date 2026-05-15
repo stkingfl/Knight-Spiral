@@ -431,6 +431,7 @@ button:active {
 }
 
 .steps-section,
+.mode-panel,
 .queue-panel,
 .action-panel {
   background: #fbfdff;
@@ -449,6 +450,36 @@ button:active {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+}
+
+.mode-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.segmented-control {
+  background: #eef3f6;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  gap: 3px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 3px;
+}
+
+.segmented-control button {
+  background: transparent;
+  border-color: transparent;
+  min-height: 34px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+.segmented-control button[aria-pressed="true"] {
+  background: #ffffff;
+  border-color: color-mix(in srgb, var(--blue-accent) 35%, var(--line));
+  box-shadow: 0 4px 12px rgba(22, 32, 42, 0.08);
+  color: var(--blue-accent);
 }
 
 body.piece-panel-open .queue-panel,
@@ -1011,6 +1042,7 @@ select {
 }
 
 .piece-diagram .grid {
+  fill: none;
   stroke: #dfe7ed;
   stroke-width: 0.75;
 }
@@ -1512,6 +1544,7 @@ h2 {
   }
 
   .steps-section,
+  .mode-panel,
   .queue-panel,
   .action-panel {
     max-width: 100%;
@@ -1773,6 +1806,7 @@ h2 {
   }
 
   .steps-section,
+  .mode-panel,
   .queue-panel {
     background: rgba(251, 253, 255, 0.94);
     border-radius: 16px;
